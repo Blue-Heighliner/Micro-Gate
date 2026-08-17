@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>BlueHeighliner.MicroGate.Core</AssemblyName>
+    <RootNamespace>BlueHeighliner.MicroGate</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>BlueHeighliner.MicroGate.Core</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>BlueHeighliner</Authors>
+    <Description>API for communicating with MicroGate SyncLink serial USB/PCI devices using the HDLC protocol in asynchronous balanced mode.</Description>
+    <PackageTags>MicroGate;SyncLink;HDLC;Serial;ABM</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

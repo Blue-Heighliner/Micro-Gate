@@ -1,0 +1,5 @@
+# Builds and packs the Core project into a NuGet package for publishing.
+
+script Publish
+    run dotnet build Core/Core.csproj -c Release
+    run dotnet pack Core/Core.csproj -c Release --no-build

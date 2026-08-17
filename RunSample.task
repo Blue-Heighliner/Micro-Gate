@@ -1,0 +1,4 @@
+# Runs the Sample Avalonia app that demonstrates Core.
+
+script Run Sample
+    run dotnet run --project Sample/Sample.csproj

@@ -1,0 +1,22 @@
+## .NET
+bin/
+obj/
+*.user
+*.nupkg
+*.snupkg
+
+## Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/*
+!.vscode/extensions.json
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Logs
+*.log
