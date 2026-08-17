@@ -6,6 +6,11 @@ namespace BlueHeighliner.MicroGate;
 internal sealed partial class App : Application
 {
     /// <summary>
+    /// Gets or sets the service provider used to resolve the application's dependencies, configured by <see cref="Program.Main"/> before the Avalonia framework starts.
+    /// </summary>
+    internal static IServiceProvider Services { get; set; } = null!;
+
+    /// <summary>
     /// Loads the application's XAML resources.
     /// </summary>
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
@@ -17,7 +22,7 @@ internal sealed partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow();
+            desktop.MainWindow = Services.GetRequiredService<MainWindow>();
         }
 
         base.OnFrameworkInitializationCompleted();

@@ -8,6 +8,7 @@
 ## Project Structure
 
 - Within each project folder, source files live under a `src` subfolder (e.g. `Core/src/Thing.cs`), not directly in the project root.
+- Architecture, component, and protocol documentation lives in the `Docs` folder at the repository root, as Markdown files (e.g. `Docs/Architecture.md`). Keep it in sync with the code it describes.
 
 ## Documentation & Comments
 

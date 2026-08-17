@@ -2,8 +2,22 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="480"
         x:Class="BlueHeighliner.MicroGate.MainWindow"
-        Title="MicroGate Sample">
-    Welcome to MicroGate!
+        Title="MicroGate Sample"
+        Width="640" Height="480">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*" ColumnDefinitions="*">
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+            <ComboBox x:Name="PortComboBox" Width="200" />
+            <Button x:Name="RefreshButton" Content="Refresh Ports" Click="RefreshPorts_Click" />
+            <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click" />
+            <TextBlock x:Name="StatusText" Text="Disconnected" VerticalAlignment="Center" Margin="8,0,0,0" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <TextBox x:Name="MessageTextBox" Width="300" PlaceholderText="Message to send" />
+            <Button x:Name="SendButton" Content="Send" Click="Send_Click" IsEnabled="False" />
+        </StackPanel>
+        <TextBlock Grid.Row="2" Text="Log" FontWeight="Bold" Margin="0,12,0,4" />
+        <ListBox x:Name="LogListBox" Grid.Row="3" />
+    </Grid>
 </Window>

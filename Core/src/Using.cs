@@ -1,1 +1,9 @@
 global using System.Buffers;
+global using System.ComponentModel;
+global using System.Runtime.CompilerServices;
+global using System.Runtime.InteropServices;
+global using System.Runtime.Versioning;
+global using System.Text;
+global using BlueHeighliner.MicroGate.Hdlc;
+global using BlueHeighliner.MicroGate.Linux;
+global using BlueHeighliner.MicroGate.Windows;
