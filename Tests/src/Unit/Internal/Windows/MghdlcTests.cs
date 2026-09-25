@@ -11,7 +11,6 @@ public sealed class MghdlcTests
     [Fact]
     public void Constants_MatchHeader()
     {
-        Assert.Equal(200u, MghdlcConstants.MaxPorts);
         Assert.Equal(2u, MghdlcConstants.ModeHdlc);
         Assert.Equal(1u, MghdlcConstants.Enabled);
         Assert.Equal(0u, MghdlcConstants.Disabled);

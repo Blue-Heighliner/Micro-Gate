@@ -13,7 +13,7 @@ internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle)
     /// <inheritdoc />
     public void Write(ReadOnlyMemory<byte> frame)
     {
-        byte[] buffer = frame.ToArray();
+        byte[] buffer = frame.ToExactArray();
 
         if (native.Write(handle, buffer) != buffer.Length)
         {
@@ -22,7 +22,18 @@ internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle)
     }
 
     /// <inheritdoc />
-    public void DisableReceiver() => native.EnableReceiver(handle, false);
+    public void DisableReceiver()
+    {
+        native.EnableReceiver(handle, false);
+        native.CancelReceive(handle);
+    }
+
+    /// <inheritdoc />
+    public void DisableTransmitter()
+    {
+        native.EnableTransmitter(handle, false);
+        native.CancelTransmit(handle);
+    }
 
     /// <inheritdoc />
     public void Dispose() => native.Close(handle);

@@ -122,4 +122,16 @@ public sealed class HdlcFrameTests
         Assert.Equal(new byte[] { 0x01, 0x09 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.Reject, PollFinal = false }.ToArray());
         Assert.Equal(new byte[] { 0x01, 0xA6, 9 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.Information, PollFinal = false, SendSequence = 3, ReceiveSequence = 5, Payload = new byte[] { 9 } }.ToArray());
     }
+
+    [Fact]
+    public void Parse_PayloadReferencesTheInputInsteadOfCopying()
+    {
+        byte[] data = [0x01, 0x00, 7, 8, 9];
+
+        HdlcFrame frame = HdlcFrame.Parse(data);
+
+        Assert.True(frame.Payload.Span.Overlaps(data.AsSpan(2), out int offset));
+        Assert.Equal(0, offset);
+        Assert.Equal(new byte[] { 7, 8, 9 }, frame.Payload.ToArray());
+    }
 }

@@ -13,15 +13,15 @@ internal interface ILinuxMicroGatePorts
 }
 
 /// <summary>
-/// Enumerates PCI/PCIe adapter ports (<c>/dev/ttySLGx</c>) and USB adapter ports (<c>/dev/ttyUSBx</c>) whose USB vendor ID identifies them as MicroGate devices.
+/// Enumerates PCI/PCIe adapter ports (<c>/dev/ttySLGx</c>) and USB adapter ports. USB adapters appear as <c>/dev/ttyUSBx</c>, which is shared with unrelated USB serial devices, so they are recognized by the udev alias the driver documentation describes: an entry in <c>/dev/serial/by-id</c> named <c>usb-MicroGate_...</c> that links to the device.
 /// </summary>
 internal sealed class LinuxMicroGatePorts : ILinuxMicroGatePorts
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="LinuxMicroGatePorts"/> class that enumerates the real <c>/dev</c> and <c>/sys/class/tty</c> folders.
+    /// Initializes a new instance of the <see cref="LinuxMicroGatePorts"/> class that enumerates the real <c>/dev</c> and <c>/dev/serial/by-id</c> folders.
     /// </summary>
     public LinuxMicroGatePorts()
-        : this("/dev", "/sys/class/tty")
+        : this("/dev", "/dev/serial/by-id")
     {
     }
 
@@ -29,62 +29,54 @@ internal sealed class LinuxMicroGatePorts : ILinuxMicroGatePorts
     /// Initializes a new instance of the <see cref="LinuxMicroGatePorts"/> class that enumerates the specified folders.
     /// </summary>
     /// <param name="devicePath">The folder containing the tty device nodes.</param>
-    /// <param name="sysClassTtyPath">The folder describing each tty in the style of <c>/sys/class/tty</c>.</param>
-    public LinuxMicroGatePorts(string devicePath, string sysClassTtyPath)
+    /// <param name="serialByIdPath">The folder containing the udev serial number aliases, in the style of <c>/dev/serial/by-id</c>.</param>
+    public LinuxMicroGatePorts(string devicePath, string serialByIdPath)
     {
         this.devicePath = devicePath;
-        this.sysClassTtyPath = sysClassTtyPath;
+        this.serialByIdPath = serialByIdPath;
     }
 
     private readonly string devicePath;
-    private readonly string sysClassTtyPath;
+    private readonly string serialByIdPath;
     private readonly string pciDeviceSearchPattern = "ttySLG*";
-    private readonly string usbDeviceSearchPattern = "ttyUSB*";
-    private readonly string microGateUsbVendorId = "2618";
+    private readonly string usbAliasPrefix = "usb-MicroGate_";
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<string>> GetPorts()
     {
-        List<string> ports = [];
+        SortedSet<string> ports = new(StringComparer.Ordinal);
 
         if (Directory.Exists(devicePath))
         {
-            ports.AddRange(Directory.EnumerateFiles(devicePath, pciDeviceSearchPattern).Select(Path.GetFileName)!);
-            ports.AddRange(Directory.EnumerateFiles(devicePath, usbDeviceSearchPattern).Select(Path.GetFileName).Where(IsMicroGateUsbDevice)!);
-        }
-
-        ports.Sort(StringComparer.Ordinal);
-        return ValueTask.FromResult<IReadOnlyList<string>>(ports);
-    }
-
-    private bool IsMicroGateUsbDevice(string? name) =>
-        name is not null && string.Equals(FindAncestorFile(Path.Combine(sysClassTtyPath, name, "device"), "idVendor")?.Trim(), microGateUsbVendorId, StringComparison.OrdinalIgnoreCase);
-
-    private string? FindAncestorFile(string startPath, string fileName)
-    {
-        string? current = ResolveRealPath(startPath);
-
-        while (current is not null && current != "/" && current != "/sys")
-        {
-            string candidate = Path.Combine(current, fileName);
-            if (File.Exists(candidate))
+            foreach (string path in Directory.EnumerateFiles(devicePath, pciDeviceSearchPattern))
             {
-                return File.ReadAllText(candidate);
+                ports.Add(Path.GetFileName(path));
             }
-
-            current = Path.GetDirectoryName(current);
         }
 
-        return null;
+        if (Directory.Exists(serialByIdPath))
+        {
+            foreach (string alias in Directory.EnumerateFileSystemEntries(serialByIdPath, usbAliasPrefix + "*"))
+            {
+                string? name = ResolveDeviceName(alias);
+                if (name is not null)
+                {
+                    ports.Add(name);
+                }
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<string>>([.. ports]);
     }
 
-    private string? ResolveRealPath(string path)
+    private string? ResolveDeviceName(string alias)
     {
-        if (!Directory.Exists(path) && !File.Exists(path))
+        FileSystemInfo? target = File.ResolveLinkTarget(alias, returnFinalTarget: true);
+        if (target is null || !File.Exists(target.FullName))
         {
             return null;
         }
 
-        return Directory.ResolveLinkTarget(path, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(path);
+        return Path.GetFileName(target.FullName);
     }
 }

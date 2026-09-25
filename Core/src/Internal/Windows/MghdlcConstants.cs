@@ -6,11 +6,6 @@ namespace BlueHeighliner.MicroGate.Windows;
 internal static class MghdlcConstants
 {
     /// <summary>
-    /// The maximum number of ports <c>MgslEnumeratePorts</c> can report.
-    /// </summary>
-    public static readonly uint MaxPorts = 200;
-
-    /// <summary>
     /// Selects HDLC synchronous mode in <see cref="MghdlcParams.Mode"/>.
     /// </summary>
     public static readonly uint ModeHdlc = 2;

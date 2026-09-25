@@ -11,6 +11,7 @@ public interface IMicroGatePortSource
     /// <param name="cancellation">A token that can be used to cancel the enumeration operation.</param>
     /// <returns>A <see cref="ValueTask{TResult}"/> that completes with the names of the available ports.</returns>
     /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
+    /// <exception cref="IOException">The driver failed to enumerate the ports.</exception>
     ValueTask<IReadOnlyList<string>> GetPorts(CancellationToken cancellation = default);
 }
 
@@ -19,9 +20,6 @@ public interface IMicroGatePortSource
 /// </summary>
 public sealed class MicroGatePortSource : IMicroGatePortSource
 {
-    private readonly ILinuxMicroGatePorts linuxPorts;
-    private readonly IWindowsMicroGatePorts windowsPorts;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="MicroGatePortSource"/> class.
     /// </summary>
@@ -41,17 +39,20 @@ public sealed class MicroGatePortSource : IMicroGatePortSource
         this.windowsPorts = windowsPorts;
     }
 
+    private readonly ILinuxMicroGatePorts linuxPorts;
+    private readonly IWindowsMicroGatePorts windowsPorts;
+
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<string>> GetPorts(CancellationToken cancellation = default)
     {
         if (OperatingSystem.IsWindows())
         {
-            return windowsPorts.GetPorts();
+            return new ValueTask<IReadOnlyList<string>>(Task.Run(() => windowsPorts.GetPorts().AsTask(), cancellation));
         }
 
         if (OperatingSystem.IsLinux())
         {
-            return linuxPorts.GetPorts();
+            return new ValueTask<IReadOnlyList<string>>(Task.Run(() => linuxPorts.GetPorts().AsTask(), cancellation));
         }
 
         throw new PlatformNotSupportedException("MicroGate SyncLink devices are only supported on Windows and Linux.");

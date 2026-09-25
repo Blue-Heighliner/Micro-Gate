@@ -39,11 +39,12 @@ Run `Scripts/Publish.cs` locally to cut a release:
 
 `Tests/src/Unit/` mirrors `Core/src` and uses Moq for every dependency; it needs no real I/O. `Tests/src/Integration/` uses real I/O and is organized by scenario:
 
-- Two connections joined by a loopback TCP socket pair standing in for the cable (handshake, ordering, large payloads, disconnect).
-- The Linux connector and native layer against a real pseudo-terminal, with a peer implementing the HDLC state machine on the master side, plus regular files and missing devices for failure paths.
-- Port enumeration against a temporary folder tree shaped like `/dev` and `/sys/class/tty`.
+- Two peers joined by a loopback TCP socket pair standing in for the cable (one or both sides sending requests, ordering, large payloads, disconnect).
+- The Linux device opener and native layer against a real pseudo-terminal, with a peer implementing the HDLC state machine on the master side, plus regular files and missing devices for failure paths.
+- Port enumeration against a temporary folder tree shaped like `/dev` and `/dev/serial/by-id`.
+- A link that drops chosen frames, checking that everything still arrives in order through rejects and the retransmit timer.
 
-Linux-only tests return early on other operating systems, and the pseudo-terminal test returns early if none can be created. The Windows native adapter can only be exercised on Windows with the driver installed, so it has no test.
+Linux-only tests return early on other operating systems, and the pseudo-terminal test returns early if none can be created. The pseudo-terminal and file tests wrap the real native layer so that the SyncLink-specific configuration calls, which only a real device accepts, are skipped; a separate test checks that the real layer rejects a non-SyncLink device. The Windows native adapter can only be exercised on Windows with the driver installed, so it has no test.
 
 ## Sample
 

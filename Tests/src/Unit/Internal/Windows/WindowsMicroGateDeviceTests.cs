@@ -53,4 +53,37 @@ public sealed class WindowsMicroGateDeviceTests
 
         native.Verify(x => x.Close(9), Times.Once);
     }
+
+    [Fact]
+    public void DisableReceiver_AlsoCancelsBlockedRead()
+    {
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.DisableReceiver();
+
+        native.Verify(x => x.CancelReceive(9), Times.Once);
+    }
+
+    [Fact]
+    public void Write_UsesTheFrameArrayWithoutCopyingWhenItIsExact()
+    {
+        byte[] frame = [1, 2];
+        native.Setup(x => x.Write(9, It.IsAny<byte[]>())).Returns(2);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.Write(frame);
+
+        native.Verify(x => x.Write(9, It.Is<byte[]>(b => ReferenceEquals(b, frame))), Times.Once);
+    }
+
+    [Fact]
+    public void DisableTransmitter_AlsoCancelsBlockedWrite()
+    {
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.DisableTransmitter();
+
+        native.Verify(x => x.EnableTransmitter(9, false), Times.Once);
+        native.Verify(x => x.CancelTransmit(9), Times.Once);
+    }
 }

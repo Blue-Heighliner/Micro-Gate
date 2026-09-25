@@ -42,6 +42,16 @@ internal static class SynclinkConstants
     public static readonly int LineDisciplineHdlc = 13;
 
     /// <summary>
+    /// The <c>poll</c> event meaning data can be read.
+    /// </summary>
+    public static readonly short PollReadable = 0x0001;
+
+    /// <summary>
+    /// Opens the device without making it the process's controlling terminal.
+    /// </summary>
+    public static readonly int FileNoControllingTerminal = 0x0100;
+
+    /// <summary>
     /// The read/write file access flag.
     /// </summary>
     public static readonly int FileAccessReadWrite = 0x0002;

@@ -28,19 +28,19 @@ internal sealed record HdlcFrame
     /// <summary>
     /// Parses the address and control fields, and any remaining bytes as the information field, from a raw HDLC frame.
     /// </summary>
-    /// <param name="data">The raw frame bytes, as delivered by the underlying HDLC bit-framing transport.</param>
+    /// <param name="data">The raw frame bytes, as delivered by the underlying HDLC bit-framing transport. The information field of the result references this memory rather than copying it.</param>
     /// <returns>The parsed <see cref="HdlcFrame"/>.</returns>
     /// <exception cref="HdlcFrameException">The frame is too short to contain an address and control field, or its control field does not encode a recognized frame kind.</exception>
-    public static HdlcFrame Parse(ReadOnlySpan<byte> data)
+    public static HdlcFrame Parse(ReadOnlyMemory<byte> data)
     {
         if (data.Length < 2)
         {
             throw new HdlcFrameException("Frame is too short to contain an address and control field.");
         }
 
-        byte address = data[0];
-        byte control = data[1];
-        ReadOnlyMemory<byte> payload = data[2..].ToArray();
+        byte address = data.Span[0];
+        byte control = data.Span[1];
+        ReadOnlyMemory<byte> payload = data[2..];
         bool pollFinal = (control & pollFinalBit) != 0;
 
         if ((control & informationControlMask) == informationControlValue)

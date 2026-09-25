@@ -60,4 +60,59 @@ public sealed class LinuxNativeTests : IDisposable
 
         native.Close(descriptor);
     }
+
+    [Fact]
+    public void WaitReadable_OnRegularFile_ReportsReadable()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        LinuxNative native = new();
+        int descriptor = native.Open(file);
+
+        Assert.Equal(1, native.WaitReadable(descriptor, 10));
+
+        native.Close(descriptor);
+    }
+
+    [Fact]
+    public void WaitReadable_OnPseudoTerminalWithoutData_TimesOutThenReportsReadableOnceDataArrives()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        using PseudoTerminal? terminal = PseudoTerminal.Create();
+        if (terminal is null)
+        {
+            return;
+        }
+
+        LinuxNative native = new();
+        int descriptor = native.Open(terminal.SlavePath);
+
+        Assert.Equal(0, native.WaitReadable(descriptor, 20));
+        terminal.Write(new byte[] { 1, 2, 3 });
+        Assert.Equal(1, native.WaitReadable(descriptor, 2000));
+        byte[] buffer = new byte[16];
+        Assert.Equal(3, native.Read(descriptor, buffer));
+
+        native.Close(descriptor);
+    }
+
+    [Fact]
+    public void WaitReadable_OnInvalidDescriptor_ReportsFailure()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        int result = new LinuxNative().WaitReadable(9999, 10);
+
+        Assert.True(result != 0);
+    }
 }

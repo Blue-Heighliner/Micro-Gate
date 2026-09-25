@@ -62,6 +62,17 @@ internal sealed class SocketMicroGateDevice(Socket socket) : IMicroGateDevice
         }
     }
 
+    public void DisableTransmitter()
+    {
+        try
+        {
+            socket.Shutdown(SocketShutdown.Send);
+        }
+        catch (Exception exception) when (exception is SocketException or ObjectDisposedException)
+        {
+        }
+    }
+
     public void Dispose() => socket.Dispose();
 
     private bool Fill(byte[] buffer, int count)

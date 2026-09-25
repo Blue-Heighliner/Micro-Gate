@@ -6,7 +6,7 @@ namespace BlueHeighliner.MicroGate.Linux;
 internal interface ILinuxNative
 {
     /// <summary>
-    /// Opens a device path for reading and writing without blocking.
+    /// Opens a device path for reading and writing without blocking, and without making it the controlling terminal.
     /// </summary>
     /// <param name="path">The full device path.</param>
     /// <returns>The opened file descriptor, or -1 on failure.</returns>
@@ -34,6 +34,14 @@ internal interface ILinuxNative
     /// <param name="buffer">The frame bytes.</param>
     /// <returns>The number of bytes written, or -1 on failure.</returns>
     int Write(int fileDescriptor, byte[] buffer);
+
+    /// <summary>
+    /// Waits until a frame can be read.
+    /// </summary>
+    /// <param name="fileDescriptor">The file descriptor to watch.</param>
+    /// <param name="timeoutMilliseconds">The longest time to wait.</param>
+    /// <returns>1 if a read will not block, 0 on timeout, or -1 on failure.</returns>
+    int WaitReadable(int fileDescriptor, int timeoutMilliseconds);
 
     /// <summary>
     /// Waits for all output written to the descriptor to be transmitted.
@@ -95,7 +103,7 @@ internal interface ILinuxNative
 internal sealed class LinuxNative : ILinuxNative
 {
     /// <inheritdoc />
-    public int Open(string path) => LibC.Open(path, SynclinkConstants.FileAccessReadWrite | SynclinkConstants.FileStatusNonBlocking);
+    public int Open(string path) => LibC.Open(path, SynclinkConstants.FileAccessReadWrite | SynclinkConstants.FileStatusNonBlocking | SynclinkConstants.FileNoControllingTerminal);
 
     /// <inheritdoc />
     public int Close(int fileDescriptor) => LibC.Close(fileDescriptor);
@@ -105,6 +113,14 @@ internal sealed class LinuxNative : ILinuxNative
 
     /// <inheritdoc />
     public int Write(int fileDescriptor, byte[] buffer) => (int)LibC.Write(fileDescriptor, buffer, (nuint)buffer.Length);
+
+    /// <inheritdoc />
+    public int WaitReadable(int fileDescriptor, int timeoutMilliseconds)
+    {
+        PollDescriptor descriptor = new() { FileDescriptor = fileDescriptor, Events = SynclinkConstants.PollReadable };
+        int result = LibC.Poll(ref descriptor, 1, timeoutMilliseconds);
+        return result > 0 ? 1 : result;
+    }
 
     /// <inheritdoc />
     public int Drain(int fileDescriptor) => LibC.Tcdrain(fileDescriptor);
@@ -132,6 +148,11 @@ internal sealed class LinuxNative : ILinuxNative
     public int ClearNonBlocking(int fileDescriptor)
     {
         int flags = LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlGetFlags);
+        if (flags < 0)
+        {
+            return flags;
+        }
+
         return LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlSetFlags, flags & SynclinkConstants.FileStatusFlagMask);
     }
 }

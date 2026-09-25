@@ -18,11 +18,12 @@ public sealed class LinuxPseudoTerminalTests
             return;
         }
 
-        MicroGateConnectionOptions options = new() { Address = 0x33 };
+        MicroGatePeerOptions options = new() { Address = 0x33 };
         HdlcStateMachine peer = new(options);
         BlockingCollection<byte[]> peerPayloads = [];
         TaskCompletionSource peerSawDisconnect = new();
         bool stopPeer = false;
+        SemaphoreSlim peerProcessed = new(0);
         Task peerLoop = Task.Run(() =>
         {
             byte[] buffer = new byte[4096];
@@ -39,7 +40,12 @@ public sealed class LinuxPseudoTerminalTests
                     return;
                 }
 
-                HdlcReceiveResult result = peer.Receive(buffer.AsMemory(0, read));
+                HdlcReceiveResult result;
+                lock (peer)
+                {
+                    result = peer.Receive(buffer.AsMemory(0, read));
+                }
+
                 if (result.Payload is { } payload)
                 {
                     peerPayloads.Add(payload.ToArray());
@@ -54,26 +60,36 @@ public sealed class LinuxPseudoTerminalTests
                 {
                     peerSawDisconnect.TrySetResult();
                 }
+
+                peerProcessed.Release();
             }
         });
 
-        IMicroGateConnection connection = await new MicroGateConnector().Connect(terminal.SlavePath, options).AsTask().WaitAsync(timeout);
-        TaskCompletionSource<byte[]> received = new();
-        connection.Received += (_, data) =>
-        {
-            using (data)
-            {
-                received.TrySetResult(data.Memory.ToArray());
-            }
-        };
+        IMicroGatePeer connection = new MicroGatePeer(new LinuxMicroGateDeviceOpener(new TolerantLinuxNative(new LinuxNative())), new Mock<IMicroGateDeviceOpener>().Object);
+        PayloadObserver received = new();
+        TestObserver<MicroGatePeerState> states = new();
+        connection.Received.Subscribe(received);
+        connection.StateChanged.Subscribe(states);
+
+        await connection.Start(terminal.SlavePath, options).AsTask().WaitAsync(timeout);
 
         Assert.True(connection.IsConnected);
 
+        ReadOnlyMemory<byte> information;
+        lock (peer)
+        {
+            information = peer.CreateInformation(new byte[] { 9, 8 });
+        }
+
+        terminal.Write(information.Span);
+        Assert.Equal(new byte[] { 9, 8 }, await received.Next());
+        await peerProcessed.WaitAsync(timeout);
+        await peerProcessed.WaitAsync(timeout);
+
         await connection.Send(new byte[] { 1, 2, 3 });
         Assert.Equal(new byte[] { 1, 2, 3 }, peerPayloads.Take(new CancellationTokenSource(timeout).Token));
-
-        terminal.Write(peer.CreateInformation(new byte[] { 9, 8 }).Span);
-        Assert.Equal(new byte[] { 9, 8 }, await received.Task.WaitAsync(timeout));
+        await peerProcessed.WaitAsync(timeout);
+        await Task.Delay(100);
 
         Task dispose = connection.DisposeAsync().AsTask();
         await peerSawDisconnect.Task.WaitAsync(timeout);
@@ -81,5 +97,6 @@ public sealed class LinuxPseudoTerminalTests
         await peerLoop.WaitAsync(timeout);
         terminal.CloseMaster();
         await dispose.WaitAsync(timeout);
+        Assert.Equal([MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
     }
 }

@@ -88,7 +88,25 @@ internal static partial class Mghdlc
     public static partial int MgslRead(nint handle, byte[] buffer, int size);
 
     /// <summary>
-    /// Lists the SyncLink ports installed on the local machine, per <c>MgslEnumeratePorts</c>.
+    /// Cancels a blocked <see cref="MgslWrite"/> issued from another thread, per <c>MgslCancelTransmit</c>.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslCancelTransmit")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslCancelTransmit(nint handle);
+
+    /// <summary>
+    /// Cancels a blocked <see cref="MgslRead"/> issued from another thread, per <c>MgslCancelReceive</c>.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslCancelReceive")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslCancelReceive(nint handle);
+
+    /// <summary>
+    /// Lists the SyncLink ports installed on the local machine, per <c>MgslEnumeratePorts</c>. Passing a null buffer of size zero returns only the count.
     /// </summary>
     /// <param name="ports">The buffer to receive the enumerated ports.</param>
     /// <param name="bufferSize">The capacity of <paramref name="ports"/>, in bytes.</param>

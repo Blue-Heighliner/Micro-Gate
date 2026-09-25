@@ -2,9 +2,9 @@ namespace BlueHeighliner.MicroGate;
 
 internal sealed class DeviceHarness : IDisposable
 {
-    public DeviceHarness(MicroGateConnectionOptions? options = null)
+    public DeviceHarness(MicroGatePeerOptions? options = null)
     {
-        Options = options ?? new MicroGateConnectionOptions();
+        Options = options ?? new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null };
 
         Device
             .Setup(x => x.Read(It.IsAny<byte[]>()))
@@ -33,6 +33,7 @@ internal sealed class DeviceHarness : IDisposable
                 writtenSignal.Release();
             });
         Device.Setup(x => x.DisableReceiver()).Callback(closed.Cancel);
+        Opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>())).Returns(Device.Object);
     }
 
     private readonly BlockingCollection<byte[]> inbound = [];
@@ -40,9 +41,11 @@ internal sealed class DeviceHarness : IDisposable
     private readonly List<byte[]> written = [];
     private readonly SemaphoreSlim writtenSignal = new(0);
 
-    public MicroGateConnectionOptions Options { get; }
+    public MicroGatePeerOptions Options { get; }
 
     public Mock<IMicroGateDevice> Device { get; } = new();
+
+    public Mock<IMicroGateDeviceOpener> Opener { get; } = new();
 
     public IReadOnlyList<byte[]> Written
     {
@@ -55,13 +58,14 @@ internal sealed class DeviceHarness : IDisposable
         }
     }
 
-    public HdlcFrame Peer(HdlcFrameKind kind, bool pollFinal = true, int sendSequence = 0, ReadOnlyMemory<byte> payload = default) =>
+    public HdlcFrame Peer(HdlcFrameKind kind, bool pollFinal = true, int sendSequence = 0, ReadOnlyMemory<byte> payload = default, int receiveSequence = 0) =>
         new()
         {
             Address = Options.Address,
             Kind = kind,
             PollFinal = pollFinal,
             SendSequence = sendSequence,
+            ReceiveSequence = receiveSequence,
             Payload = payload,
         };
 
@@ -81,14 +85,25 @@ internal sealed class DeviceHarness : IDisposable
         return HdlcFrame.Parse(Written[index]);
     }
 
-    public async Task<MicroGateDeviceConnection> Connect()
+    public MicroGatePeer CreatePeer(TimeSpan? shutdownTimeout = null) => new(Opener.Object, Opener.Object, shutdownTimeout);
+
+    public async Task<MicroGatePeer> Connect()
     {
-        MicroGateDeviceConnection connection = new(Device.Object, new HdlcStateMachine(Options));
-        Task establish = connection.Establish(CancellationToken.None);
+        MicroGatePeer peer = CreatePeer();
+        Task connecting = peer.Start("port", Options).AsTask();
         await NextWritten(0);
         Receive(Peer(HdlcFrameKind.UnnumberedAcknowledge));
-        await establish.WaitAsync(TimeSpan.FromSeconds(5));
-        return connection;
+        await connecting.WaitAsync(TimeSpan.FromSeconds(5));
+        return peer;
+    }
+
+    public async Task<MicroGatePeer> Listen()
+    {
+        MicroGatePeer peer = CreatePeer();
+        Task listening = peer.Start("port", Options with { RetryInterval = null }).AsTask();
+        Receive(Peer(HdlcFrameKind.SetAsynchronousBalancedMode));
+        await listening.WaitAsync(TimeSpan.FromSeconds(5));
+        return peer;
     }
 
     public void Dispose()

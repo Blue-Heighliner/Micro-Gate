@@ -1,5 +1,8 @@
 global using System.Buffers;
 global using System.ComponentModel;
+global using System.Diagnostics;
+global using System.Reactive.Linq;
+global using System.Reactive.Subjects;
 global using System.Runtime.CompilerServices;
 global using System.Runtime.InteropServices;
 global using System.Runtime.Versioning;

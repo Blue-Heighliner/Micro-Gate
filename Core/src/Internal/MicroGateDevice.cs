@@ -23,4 +23,9 @@ internal interface IMicroGateDevice : IDisposable
     /// Disables the receiver, which cancels any blocked <see cref="Read"/>.
     /// </summary>
     void DisableReceiver();
+
+    /// <summary>
+    /// Disables the transmitter, which cancels any blocked <see cref="Write"/> and discards data not yet sent.
+    /// </summary>
+    void DisableTransmitter();
 }

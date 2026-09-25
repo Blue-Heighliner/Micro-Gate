@@ -9,22 +9,23 @@ internal sealed partial class MainWindow : Window
     /// Initializes a new instance of the <see cref="MainWindow"/> class.
     /// </summary>
     /// <param name="portSource">The port source used to enumerate available MicroGate devices.</param>
-    /// <param name="connector">The connector used to open connections to MicroGate devices.</param>
-    public MainWindow(IMicroGatePortSource portSource, IMicroGateConnector connector)
+    /// <param name="peerFactory">The factory that creates a new, idle peer. A peer is single use, so one is created for every connection.</param>
+    public MainWindow(IMicroGatePortSource portSource, IMicroGatePeerFactory peerFactory)
     {
         this.portSource = portSource;
-        this.connector = connector;
+        this.peerFactory = peerFactory;
         InitializeComponent();
 
         LogListBox.ItemsSource = log;
         Loaded += async (_, _) => await RefreshPorts();
-        Closed += (_, _) => connection?.Dispose();
+        Closed += (_, _) => peer?.Dispose();
     }
 
     private readonly IMicroGatePortSource portSource;
-    private readonly IMicroGateConnector connector;
+    private readonly IMicroGatePeerFactory peerFactory;
     private readonly ObservableCollection<string> log = [];
-    private IMicroGateConnection? connection;
+    private readonly List<IDisposable> subscriptions = [];
+    private IMicroGatePeer? peer;
 
     private async Task RefreshPorts()
     {
@@ -40,7 +41,7 @@ internal sealed partial class MainWindow : Window
 
     private async void Connect_Click(object? sender, RoutedEventArgs e)
     {
-        if (connection is not null)
+        if (peer is not null)
         {
             await Disconnect();
             return;
@@ -52,20 +53,22 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
+        IMicroGatePeer newPeer = peerFactory.Create();
+        peer = newPeer;
+        subscriptions.Add(newPeer.Received.Subscribe(OnReceived));
+        subscriptions.Add(newPeer.StateChanged.Subscribe(state => OnStateChanged(newPeer, state)));
+
         ConnectButton.IsEnabled = false;
-        StatusText.Text = "Connecting...";
 
         try
         {
-            connection = await connector.Connect(portName);
-            connection.Received += OnReceived;
-            connection.Disconnected += OnDisconnected;
+            await newPeer.Start(portName);
             AppendLog($"Connected to {portName}.");
         }
         catch (Exception ex)
         {
             AppendLog($"Connect failed: {ex.Message}");
-            connection = null;
+            await Release(newPeer);
         }
 
         ConnectButton.IsEnabled = true;
@@ -74,7 +77,7 @@ internal sealed partial class MainWindow : Window
 
     private async void Send_Click(object? sender, RoutedEventArgs e)
     {
-        if (connection is null || string.IsNullOrEmpty(MessageTextBox.Text))
+        if (peer is not { IsConnected: true } connected || string.IsNullOrEmpty(MessageTextBox.Text))
         {
             return;
         }
@@ -84,7 +87,7 @@ internal sealed partial class MainWindow : Window
 
         try
         {
-            await connection.Send(data);
+            await connected.Send(data);
             AppendLog($"Sent: {message}");
             MessageTextBox.Text = string.Empty;
         }
@@ -96,44 +99,57 @@ internal sealed partial class MainWindow : Window
 
     private async Task Disconnect()
     {
-        if (connection is null)
+        if (peer is null)
         {
             return;
         }
 
-        connection.Received -= OnReceived;
-        connection.Disconnected -= OnDisconnected;
-        await connection.DisposeAsync();
-        connection = null;
+        await Release(peer);
         AppendLog("Disconnected.");
         UpdateConnectionState();
     }
 
-    private void OnReceived(object? sender, IMemoryOwner<byte> data)
+    private async Task Release(IMicroGatePeer released)
     {
-        string text;
-        using (data)
+        if (peer != released)
         {
-            text = Encoding.UTF8.GetString(data.Memory.Span);
+            return;
         }
 
+        peer = null;
+        foreach (IDisposable subscription in subscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        subscriptions.Clear();
+        await released.DisposeAsync();
+    }
+
+    private void OnReceived(ReadOnlyMemory<byte> data)
+    {
+        string text = Encoding.UTF8.GetString(data.Span);
         Dispatcher.UIThread.Post(() => AppendLog($"Received: {text}"));
     }
 
-    private void OnDisconnected(object? sender, EventArgs e) =>
-        Dispatcher.UIThread.Post(() =>
+    private void OnStateChanged(IMicroGatePeer source, MicroGatePeerState state) =>
+        Dispatcher.UIThread.Post(async () =>
         {
-            connection = null;
-            AppendLog("Disconnected.");
+            if (state == MicroGatePeerState.Disconnected && peer == source)
+            {
+                await Release(source);
+                AppendLog("Disconnected.");
+            }
+
             UpdateConnectionState();
         });
 
     private void UpdateConnectionState()
     {
-        bool connected = connection is not null;
-        ConnectButton.Content = connected ? "Disconnect" : "Connect";
-        StatusText.Text = connected ? "Connected" : "Disconnected";
-        SendButton.IsEnabled = connected;
+        MicroGatePeerState state = peer?.State ?? MicroGatePeerState.Disconnected;
+        ConnectButton.Content = peer is null ? "Connect" : "Disconnect";
+        StatusText.Text = state == MicroGatePeerState.Connecting ? "Connecting..." : state.ToString();
+        SendButton.IsEnabled = state == MicroGatePeerState.Connected;
     }
 
     private void AppendLog(string message) => log.Add($"{DateTime.Now:HH:mm:ss} {message}");

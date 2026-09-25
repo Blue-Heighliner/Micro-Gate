@@ -92,6 +92,16 @@ internal static partial class LibC
     public static partial int Ioctl(int fd, int request, nint argument);
 
     /// <summary>
+    /// Waits for a file descriptor to become ready, per POSIX <c>poll(2)</c>.
+    /// </summary>
+    /// <param name="descriptor">The descriptor and events to watch; the returned events are stored back into it.</param>
+    /// <param name="count">The number of descriptors, which is 1.</param>
+    /// <param name="timeout">The longest time to wait, in milliseconds.</param>
+    /// <returns>The number of ready descriptors, 0 on timeout, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "poll", SetLastError = true)]
+    public static partial int Poll(ref PollDescriptor descriptor, nuint count, int timeout);
+
+    /// <summary>
     /// Waits for all output written to a file descriptor to be transmitted, per POSIX <c>tcdrain(3)</c>.
     /// </summary>
     /// <param name="fd">The file descriptor to drain.</param>

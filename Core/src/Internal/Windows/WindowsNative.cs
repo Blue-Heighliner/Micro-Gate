@@ -53,6 +53,20 @@ internal interface IWindowsNative
     uint EnableTransmitter(nint handle, bool enabled);
 
     /// <summary>
+    /// Cancels a blocked write issued from another thread.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint CancelTransmit(nint handle);
+
+    /// <summary>
+    /// Cancels a blocked read issued from another thread.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint CancelReceive(nint handle);
+
+    /// <summary>
     /// Reads one frame, blocking until one is available.
     /// </summary>
     /// <param name="handle">The device handle.</param>
@@ -72,6 +86,7 @@ internal interface IWindowsNative
     /// Enumerates the installed SyncLink ports.
     /// </summary>
     /// <returns>One entry per installed port.</returns>
+    /// <exception cref="IOException">The driver failed to enumerate the ports.</exception>
     MghdlcPort[] EnumeratePorts();
 }
 
@@ -106,6 +121,14 @@ internal sealed class WindowsNative : IWindowsNative
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]
+    public uint CancelTransmit(nint handle) => Mghdlc.MgslCancelTransmit(handle);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint CancelReceive(nint handle) => Mghdlc.MgslCancelReceive(handle);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
     public int Read(nint handle, byte[] buffer) => Mghdlc.MgslRead(handle, buffer, buffer.Length);
 
     /// <inheritdoc />
@@ -116,13 +139,29 @@ internal sealed class WindowsNative : IWindowsNative
     [SupportedOSPlatform("windows")]
     public unsafe MghdlcPort[] EnumeratePorts()
     {
-        MghdlcPort[] buffer = new MghdlcPort[MghdlcConstants.MaxPorts];
+        uint status = Mghdlc.MgslEnumeratePorts(null, 0, out uint count);
+        if (status != MghdlcConstants.Success)
+        {
+            throw new IOException("Failed to count the SyncLink ports.", new Win32Exception((int)status));
+        }
+
+        if (count == 0)
+        {
+            return [];
+        }
+
+        MghdlcPort[] buffer = new MghdlcPort[count];
 
         fixed (MghdlcPort* ports = buffer)
         {
-            uint bufferSize = (uint)(buffer.Length * sizeof(MghdlcPort));
-            Mghdlc.MgslEnumeratePorts(ports, bufferSize, out uint portCount);
-            return buffer[..(int)portCount];
+            status = Mghdlc.MgslEnumeratePorts(ports, (uint)(buffer.Length * sizeof(MghdlcPort)), out count);
         }
+
+        if (status != MghdlcConstants.Success)
+        {
+            throw new IOException("Failed to enumerate the SyncLink ports.", new Win32Exception((int)status));
+        }
+
+        return buffer[..(int)Math.Min(count, (uint)buffer.Length)];
     }
 }

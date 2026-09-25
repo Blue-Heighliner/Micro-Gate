@@ -1,0 +1,304 @@
+namespace BlueHeighliner.MicroGate;
+
+public sealed class HdlcStateMachineReliabilityTests
+{
+    private readonly MicroGatePeerOptions options = new() { Address = 0x11 };
+
+    private (HdlcStateMachine Local, HdlcStateMachine Remote) EstablishConnectedPair()
+    {
+        HdlcStateMachine local = new(options);
+        HdlcStateMachine remote = new(options);
+        local.Receive(remote.Receive(local.CreateConnect()).Response!.Value);
+        return (local, remote);
+    }
+
+    private byte[] Frame(HdlcFrameKind kind, int receiveSequence = 0, int sendSequence = 0, byte[]? payload = null) =>
+        new HdlcFrame { Address = 0x11, Kind = kind, PollFinal = false, ReceiveSequence = receiveSequence, SendSequence = sendSequence, Payload = payload ?? [] }.ToArray();
+
+    [Fact]
+    public void CreateInformation_KeepsFramesUntilWindowIsFull()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+
+        for (int i = 0; i < local.WindowSize; i++)
+        {
+            local.CreateInformation(new byte[] { (byte)i });
+        }
+
+        Assert.Equal(7, local.WindowSize);
+        Assert.Equal(7, local.OutstandingCount);
+        Assert.Throws<InvalidOperationException>(() => local.CreateInformation(new byte[] { 9 }));
+    }
+
+    [Fact]
+    public void Receive_ReceiveReady_AcknowledgesFramesBeforeItsSequence()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        for (int i = 0; i < 4; i++)
+        {
+            local.CreateInformation(new byte[] { (byte)i });
+        }
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 3));
+
+        Assert.Equal(3, result.Acknowledged);
+        Assert.Equal(1, local.OutstandingCount);
+        Assert.False(result.Retransmit);
+    }
+
+    [Fact]
+    public void Receive_ReceiveNotReady_AlsoAcknowledges()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.ReceiveNotReady, receiveSequence: 1));
+
+        Assert.Equal(1, result.Acknowledged);
+        Assert.Equal(0, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void Receive_InformationFrame_AcknowledgesThroughItsReceiveSequence()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+        local.CreateInformation(new byte[] { 2 });
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.Information, receiveSequence: 2, sendSequence: 0, payload: [7]));
+
+        Assert.Equal(2, result.Acknowledged);
+        Assert.Equal(new byte[] { 7 }, result.Payload!.Value.ToArray());
+    }
+
+    [Fact]
+    public void Receive_AcknowledgementBeyondWhatWasSent_IsIgnored()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 5));
+
+        Assert.Equal(0, result.Acknowledged);
+        Assert.Equal(1, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void Receive_Reject_AcknowledgesEarlierFramesAndAsksForTheRestToBeSentAgain()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        for (int i = 0; i < 3; i++)
+        {
+            local.CreateInformation(new byte[] { (byte)(10 + i) });
+        }
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 1));
+        IReadOnlyList<ReadOnlyMemory<byte>> frames = local.CreateRetransmission();
+
+        Assert.Equal(1, result.Acknowledged);
+        Assert.True(result.Retransmit);
+        Assert.Equal(2, frames.Count);
+        HdlcFrame first = HdlcFrame.Parse(frames[0]);
+        HdlcFrame second = HdlcFrame.Parse(frames[1]);
+        Assert.Equal(HdlcFrameKind.Information, first.Kind);
+        Assert.Equal(1, first.SendSequence);
+        Assert.Equal(new byte[] { 11 }, first.Payload.ToArray());
+        Assert.Equal(2, second.SendSequence);
+        Assert.Equal(new byte[] { 12 }, second.Payload.ToArray());
+        Assert.Equal(2, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void Receive_Reject_WithNothingOutstanding_DoesNotAskForRetransmission()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 0));
+
+        Assert.False(result.Retransmit);
+    }
+
+    [Fact]
+    public void DiscardLastInformation_TakesBackTheNewestFrameAndItsSequenceNumber()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+        local.CreateInformation(new byte[] { 2 });
+
+        local.DiscardLastInformation();
+        HdlcFrame next = HdlcFrame.Parse(local.CreateInformation(new byte[] { 3 }));
+
+        Assert.Equal(1, next.SendSequence);
+        Assert.Equal(2, local.OutstandingCount);
+        Assert.Equal([new byte[] { 1 }, new byte[] { 3 }], local.CreateRetransmission().Select(frame => HdlcFrame.Parse(frame).Payload.ToArray()), new ByteArrayComparer());
+    }
+
+    [Fact]
+    public void DiscardLastInformation_WithNothingOutstanding_DoesNothing()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+
+        local.DiscardLastInformation();
+
+        Assert.Equal(0, HdlcFrame.Parse(local.CreateInformation(new byte[] { 1 })).SendSequence);
+    }
+
+    [Fact]
+    public void CreateRetransmission_ResendsAllOutstandingWithCurrentReceiveSequence()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+        local.CreateInformation(new byte[] { 2 });
+        local.Receive(Frame(HdlcFrameKind.Information, receiveSequence: 0, sendSequence: 0, payload: [5]));
+
+        IReadOnlyList<ReadOnlyMemory<byte>> frames = local.CreateRetransmission();
+
+        Assert.Equal(2, frames.Count);
+        Assert.All(frames, frame => Assert.Equal(1, HdlcFrame.Parse(frame).ReceiveSequence));
+        Assert.Equal([0, 1], frames.Select(frame => HdlcFrame.Parse(frame).SendSequence));
+        Assert.Equal(2, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void CreateRetransmission_WithNothingOutstanding_ReturnsEmpty()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+
+        Assert.Empty(local.CreateRetransmission());
+    }
+
+    [Fact]
+    public void Receive_OutOfSequenceInformation_RejectsOnlyOnceUntilTheGapIsFilled()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+
+        HdlcReceiveResult first = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 1, payload: [1]));
+        HdlcReceiveResult second = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 2, payload: [2]));
+        HdlcReceiveResult filled = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 0, payload: [0]));
+        HdlcReceiveResult again = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 5, payload: [5]));
+
+        Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(first.Response!.Value).Kind);
+        Assert.Null(first.Payload);
+        Assert.Null(second.Response);
+        Assert.Null(second.Payload);
+        Assert.Equal(new byte[] { 0 }, filled.Payload!.Value.ToArray());
+        Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(again.Response!.Value).Kind);
+    }
+
+    [Fact]
+    public void Receive_SabmWhileConnected_RenumbersOutstandingFramesAndAsksForThemToBeSentAgain()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+        local.CreateInformation(new byte[] { 2 });
+        local.CreateInformation(new byte[] { 3 });
+        local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 1));
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.SetAsynchronousBalancedMode));
+        IReadOnlyList<ReadOnlyMemory<byte>> frames = local.CreateRetransmission();
+
+        Assert.Equal(0, result.Acknowledged);
+        Assert.True(result.Retransmit);
+        Assert.Equal(HdlcFrameKind.UnnumberedAcknowledge, HdlcFrame.Parse(result.Response!.Value).Kind);
+        Assert.Equal(2, local.OutstandingCount);
+        Assert.Equal([0, 1], frames.Select(frame => HdlcFrame.Parse(frame).SendSequence));
+        Assert.Equal([new byte[] { 2 }, new byte[] { 3 }], frames.Select(frame => HdlcFrame.Parse(frame).Payload.ToArray()), new ByteArrayComparer());
+        Assert.Equal(2, HdlcFrame.Parse(local.CreateInformation(new byte[] { 4 })).SendSequence);
+    }
+
+    [Fact]
+    public void Receive_SabmWhileNotConnected_DiscardsStaleOutstandingFramesAndReportsThem()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+        local.Receive(Frame(HdlcFrameKind.DisconnectedMode));
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.SetAsynchronousBalancedMode));
+
+        Assert.Equal(1, result.Acknowledged);
+        Assert.Equal(0, local.OutstandingCount);
+        Assert.False(result.Retransmit);
+    }
+
+    [Fact]
+    public void Receive_UaForARequestSentWhileAlreadyConnected_ResetsTheLinkLikeThePeerDid()
+    {
+        HdlcStateMachine local = new(options);
+        HdlcStateMachine remote = new(options);
+        ReadOnlyMemory<byte> first = local.CreateConnect();
+        ReadOnlyMemory<byte> second = local.CreateConnect();
+        HdlcReceiveResult firstAnswer = remote.Receive(first);
+        local.Receive(firstAnswer.Response!.Value);
+        local.CreateInformation(new byte[] { 7 });
+        remote.Receive(local.CreateInformation(new byte[] { 8 }));
+        HdlcReceiveResult secondAnswer = remote.Receive(second);
+
+        HdlcReceiveResult result = local.Receive(secondAnswer.Response!.Value);
+
+        Assert.True(result.Retransmit);
+        Assert.Equal(HdlcConnectionState.Connected, result.State);
+        Assert.Equal([0, 1], local.CreateRetransmission().Select(frame => HdlcFrame.Parse(frame).SendSequence));
+    }
+
+    [Fact]
+    public void Receive_UnsolicitedUaWhileConnected_LeavesTheLinkAlone()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+
+        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.UnnumberedAcknowledge));
+
+        Assert.False(result.Retransmit);
+        Assert.Equal(1, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void CreateConnect_DiscardsOutstandingFrames()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.CreateInformation(new byte[] { 1 });
+
+        local.CreateConnect();
+
+        Assert.Equal(0, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void Receive_SupervisoryFrameWhileDisconnected_IsIgnored()
+    {
+        HdlcStateMachine machine = new(options);
+
+        HdlcReceiveResult result = machine.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 1));
+
+        Assert.Equal(HdlcConnectionState.Disconnected, result.State);
+        Assert.Equal(0, result.Acknowledged);
+        Assert.False(result.Retransmit);
+    }
+
+    [Fact]
+    public void FullWindowCycles_WithAcknowledgements_NeverExceedsWindow()
+    {
+        (HdlcStateMachine local, HdlcStateMachine remote) = EstablishConnectedPair();
+
+        for (int round = 0; round < 5; round++)
+        {
+            List<HdlcReceiveResult> received = [];
+            for (int i = 0; i < local.WindowSize; i++)
+            {
+                received.Add(remote.Receive(local.CreateInformation(new byte[] { (byte)i })));
+            }
+
+            Assert.Equal(local.WindowSize, local.OutstandingCount);
+            local.Receive(received[^1].Response!.Value);
+            Assert.Equal(0, local.OutstandingCount);
+            Assert.Equal(Enumerable.Range(0, local.WindowSize).Select(i => (byte)i), received.Select(result => result.Payload!.Value.ToArray()[0]));
+        }
+    }
+
+    private sealed class ByteArrayComparer : IEqualityComparer<byte[]>
+    {
+        public bool Equals(byte[]? x, byte[]? y) => x is not null && y is not null && x.AsSpan().SequenceEqual(y);
+
+        public int GetHashCode(byte[] obj) => obj.Length;
+    }
+}

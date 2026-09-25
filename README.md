@@ -5,7 +5,7 @@
 [![Build](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml/badge.svg)](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml)
 [![Coverage](https://raw.githubusercontent.com/Blue-Heighliner/Micro-Gate/main/.github/badges/badge_linecoverage.svg)](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml)
 
-A C# API for using [MicroGate](https://www.microgate.com) SyncLink devices and drivers to create and communicate over serial USB/PCI card devices using the HDLC protocol in asynchronous balanced mode (ABM), on both Windows (via `mghdlc.dll`'s base API) and Linux (via the SyncLink driver's tty device). It has no third-party dependencies; see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+A C# API for using [MicroGate](https://www.microgate.com) SyncLink devices and drivers to create and communicate over serial USB/PCI card devices using the HDLC protocol in asynchronous balanced mode (ABM), on both Windows (via `mghdlc.dll`'s base API) and Linux (via the SyncLink driver's tty device). Its only dependency is [System.Reactive](https://github.com/dotnet/reactive); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
 ## Installing
 
@@ -19,20 +19,15 @@ dotnet add package BlueHeighliner.MicroGate
 using BlueHeighliner.MicroGate;
 
 IMicroGatePortSource ports = new MicroGatePortSource();
-IMicroGateConnector connector = new MicroGateConnector();
+IMicroGatePeerFactory factory = new MicroGatePeerFactory();
 
 IReadOnlyList<string> names = await ports.GetPorts();
 
-await using IMicroGateConnection connection = await connector.Connect(names[0]);
-connection.Received += (_, data) =>
-{
-    using (data)
-    {
-        Console.WriteLine(System.Text.Encoding.UTF8.GetString(data.Memory.Span));
-    }
-};
+await using IMicroGatePeer peer = factory.Create();
+peer.Received.Subscribe(data => Console.WriteLine(System.Text.Encoding.UTF8.GetString(data.Span)));
 
-await connection.Send("Hello"u8.ToArray());
+await peer.Start(names[0]);
+await peer.Send("Hello"u8.ToArray());
 ```
 
 ## Documentation
@@ -43,7 +38,8 @@ await connection.Send("Hello"u8.ToArray());
 | [`Docs/Usage.md`](Docs/Usage.md) | Runnable usage examples. |
 | [`Docs/Architecture.md`](Docs/Architecture.md) | High-level design decisions. |
 | [`Docs/Project.md`](Docs/Project.md) | This repository's scripts, publishing, and CI. |
-| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, connection lifecycle, Linux and Windows transports). |
+| [`Docs/MicroGate/`](Docs/MicroGate) | The vendor serial API documentation and driver headers (`synclink.h`, `Mghdlc.h`) for Linux and Windows that the native layers are written against. |
+| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, peer lifecycle, Linux and Windows transports). |
 
 ## Sample
 

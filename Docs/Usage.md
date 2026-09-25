@@ -1,6 +1,6 @@
 # Usage
 
-Runnable examples of `MicroGatePortSource`, `MicroGateConnector`, and `IMicroGateConnection` in different situations.
+Runnable examples of `MicroGatePortSource` and `MicroGatePeer` in different situations. `Received` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
 
 ## List the available ports
 
@@ -22,46 +22,90 @@ On Linux these are `ttySLG*` (PCI/PCIe) and MicroGate `ttyUSB*` devices; on Wind
 ```csharp
 using BlueHeighliner.MicroGate;
 
-IMicroGateConnector connector = new MicroGateConnector();
-
-await using IMicroGateConnection connection = await connector.Connect("ttySLG0");
-await connection.Send("Hello"u8.ToArray());
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await peer.Start("ttySLG0");
+await peer.Send("Hello"u8.ToArray());
 ```
 
-With no options the default settings apply: NRZ encoding, CRC-16-CCITT, flag idle, and HDLC address `0xFF`, which the peer must also use.
+With no options the default settings apply: NRZ encoding, CRC-16-CCITT, flag idle, and HDLC address `0xFF`, which the remote peer must also use.
 
-## Receive data
+## Subscribe before connecting
 
 ```csharp
 using System.Text;
+using BlueHeighliner.MicroGate;
 
-connection.Received += (_, data) =>
-{
-    using (data)
-    {
-        Console.WriteLine(Encoding.UTF8.GetString(data.Memory.Span));
-    }
-};
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+
+peer.StateChanged.Subscribe(state => Console.WriteLine($"State: {state}"));
+peer.Received.Subscribe(data => Console.WriteLine(Encoding.UTF8.GetString(data.Span)));
+
+await peer.Start("ttySLG0");
 ```
 
-The handler owns `data` and must dispose it; the `using` returns the pooled buffer.
+Subscribing first means no state change and no early frame is missed. The data an observer receives is backed by an array allocated for that frame, so it can be kept or passed to another thread, but it is shared between observers and must not be modified.
+
+## Wait for the remote peer instead of sending requests
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+MicroGatePeerOptions options = new() { RetryInterval = null };
+
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+
+using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+await peer.Start("ttySLG0", options, timeout.Token);
+```
+
+With a `null` retry interval this side never sends a connection request and completes when the remote peer's request arrives. By default both sides send requests every second until answered, so either may be started first.
+
+## Change how often requests are sent
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+MicroGatePeerOptions options = new() { RetryInterval = TimeSpan.FromMilliseconds(250) };
+
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await peer.Start("ttySLG0", options);
+```
+
+## Tune retransmission
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+MicroGatePeerOptions options = new() { RetransmitInterval = TimeSpan.FromMilliseconds(250) };
+
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await peer.Start("ttySLG0", options);
+
+byte[] message = new byte[peer.MaxPayloadSize];
+await peer.Send(message);
+```
+
+Sent data is kept until the remote peer acknowledges it and is sent again if the remote peer rejects a gap or nothing is acknowledged within the interval. Use a `null` interval to resend only on rejection. A payload can be at most `MaxPayloadSize` bytes, and up to 7 sends can be unacknowledged before the next one waits.
 
 ## React to a disconnect
 
 ```csharp
-connection.Disconnected += (_, _) => Console.WriteLine("Peer disconnected.");
+peer.StateChanged.Subscribe(
+    state => Console.WriteLine($"State: {state}"),
+    () => Console.WriteLine("Peer is finished."));
 ```
+
+`StateChanged` completes when the peer becomes `Disconnected`, whether the remote peer disconnected, the device was lost, or the peer was disposed.
 
 ## Always zero poll/final bit
 
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGateConnectionOptions options = new() { Address = 0x01, DisablePollFinalBit = true };
+MicroGatePeerOptions options = new() { Address = 0x01, DisablePollFinalBit = true };
 
-IMicroGateConnector connector = new MicroGateConnector();
-
-await using IMicroGateConnection connection = await connector.Connect("ttySLG0", options);
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await peer.Start("ttySLG0", options);
 ```
 
 With `DisablePollFinalBit`, every frame the station sends has the poll/final bit at 0, including acknowledgements to a peer frame that had it set.
@@ -71,7 +115,7 @@ With `DisablePollFinalBit`, every frame the station sends has the poll/final bit
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGateConnectionOptions options = new()
+MicroGatePeerOptions options = new()
 {
     Encoding = MicroGateEncoding.NrziSpace,
     Crc = MicroGateCrc.Crc32Ccitt,
@@ -79,9 +123,8 @@ MicroGateConnectionOptions options = new()
     HardwareAddressFilter = 0x01,
 };
 
-IMicroGateConnector connector = new MicroGateConnector();
-
-await using IMicroGateConnection connection = await connector.Connect("ttySLG0", options);
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await peer.Start("ttySLG0", options);
 ```
 
 Both peers must agree on encoding, CRC, and idle pattern.
@@ -94,5 +137,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 ServiceCollection services = new();
 services.AddSingleton<IMicroGatePortSource, MicroGatePortSource>();
-services.AddSingleton<IMicroGateConnector, MicroGateConnector>();
+services.AddSingleton<IMicroGatePeerFactory, MicroGatePeerFactory>();
 ```
+
+A peer can be started only once, so a service that needs links takes the `IMicroGatePeerFactory` and calls `Create` for each one, disposing each peer when done. Registering `IMicroGatePeer` itself is possible, but only as transient, and a container then tracks every peer it resolves until the container is disposed.

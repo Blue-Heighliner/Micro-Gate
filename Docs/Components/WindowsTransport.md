@@ -4,7 +4,7 @@ Covers `Mghdlc`, `WindowsNative`, `WindowsMicroGateDevice`, `MghdlcParams`, `Mgh
 
 ## P/Invoke surface
 
-`Mghdlc` declares `LibraryImport` bindings for the base API of `mghdlc.dll` only: `MgslOpenByName`, `MgslClose`, `MgslSetParams`, `MgslSetIdleMode`, `MgslEnableTransmitter`, `MgslEnableReceiver`, `MgslWrite`, `MgslRead`, and `MgslEnumeratePorts`. The link-layer `MgslDl*` functions are deliberately not declared, so both platforms share one protocol engine. Calls use the stdcall convention. `WindowsNative` (behind `IWindowsNative`) wraps them without pointers or `ref` parameters, and `EnumeratePorts` returns exactly the reported number of entries as a managed array.
+`Mghdlc` declares `LibraryImport` bindings for the base API of `mghdlc.dll` only: `MgslOpenByName`, `MgslClose`, `MgslSetParams`, `MgslSetIdleMode`, `MgslEnableTransmitter`, `MgslEnableReceiver`, `MgslCancelReceive`, `MgslCancelTransmit`, `MgslWrite`, `MgslRead`, and `MgslEnumeratePorts`. The link-layer `MgslDl*` functions are deliberately not declared, so both platforms share one protocol engine. Calls use the stdcall convention. `WindowsNative` (behind `IWindowsNative`) wraps them without pointers or `ref` parameters, and `EnumeratePorts` returns exactly the reported number of entries as a managed array.
 
 ## Native struct layout
 
@@ -12,8 +12,8 @@ Covers `Mghdlc`, `WindowsNative`, `WindowsMicroGateDevice`, `MghdlcParams`, `Mgh
 
 ## Port configuration
 
-The same settings as the Linux transport, expressed through `MghdlcParams`: HDLC mode, the device options' encoding, CRC, and hardware address filter (null becomes `0xFF`, disabled), and external clock. Then the idle mode from the options is set and the receiver and transmitter are enabled. There is no line discipline or blocking flag step; `MgslRead` blocks by itself.
+The same settings as the Linux transport, expressed through `MghdlcParams`: HDLC mode, the device options' encoding, CRC, and hardware address filter (null becomes `0xFF`, disabled), and external clock. Then the idle mode from the options is set and the receiver and transmitter are enabled (the receiver starts disabled). There is no line discipline or blocking flag step; `MgslRead` blocks by itself and returns one frame per call. Every status code is checked, and a failure throws `IOException` naming the step. Disposal disables the receiver and also calls `MgslCancelReceive`, the call the driver documentation gives for cancelling a blocked read from another thread, since disabling the receiver alone is not documented to do so. Disabling the transmitter likewise calls `MgslCancelTransmit`, the documented way to abort a blocked `MgslWrite`, which disposal uses when the disconnect write does not complete.
 
 ## Port enumeration
 
-`WindowsMicroGatePorts` calls `MgslEnumeratePorts` into a `MghdlcPort` buffer sized for the header's maximum of 200 ports, decodes each entry's device name, and returns the names sorted ordinally. The names are what `MgslOpenByName` accepts.
+`WindowsMicroGatePorts` decodes each entry's device name and returns the names sorted ordinally; they are what `MgslOpenByName` accepts. `WindowsNative` follows the documented two-call pattern: `MgslEnumeratePorts` with no buffer returns the port count, a buffer of exactly that many entries is allocated, and the second call fills it. Both statuses are checked and a failure throws `IOException`, so a driver error is reported instead of being mistaken for an empty or garbage list.
