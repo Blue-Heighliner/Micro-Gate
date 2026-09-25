@@ -13,7 +13,6 @@ internal static class Program
     public static void Main(string[] args)
     {
         ServiceCollection services = new();
-        services.AddSingleton(new HdlcStationOptions { Address = 0xFF });
         services.AddConventionServices(typeof(IMicroGateConnector).Assembly);
         services.AddTransient<MainWindow>();
         App.Services = services.BuildServiceProvider();

@@ -1,3 +1,0 @@
-script Publish
-    run dotnet build Core/Core.csproj -c Release
-    run dotnet pack Core/Core.csproj -c Release --no-build

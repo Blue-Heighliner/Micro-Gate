@@ -1,42 +1,50 @@
 # MicroGate
 
-A C# API for using [MicroGate](https://www.microgate.com) SyncLink devices and drivers to create and communicate over serial USB/PCI card devices using the HDLC protocol in asynchronous balanced mode (ABM), on both Windows and Linux.
+[![NuGet](https://img.shields.io/nuget/v/BlueHeighliner.MicroGate.svg?label=NuGet)](https://www.nuget.org/packages/BlueHeighliner.MicroGate)
+[![License: MIT](https://img.shields.io/github/license/Blue-Heighliner/Micro-Gate.svg)](LICENSE)
+[![Build](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml/badge.svg)](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml)
+[![Coverage](https://raw.githubusercontent.com/Blue-Heighliner/Micro-Gate/main/.github/badges/badge_linecoverage.svg)](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml)
 
-## Projects
+A C# API for using [MicroGate](https://www.microgate.com) SyncLink devices and drivers to create and communicate over serial USB/PCI card devices using the HDLC protocol in asynchronous balanced mode (ABM), on both Windows (via `mghdlc.dll`'s base API) and Linux (via the SyncLink driver's tty device). It has no third-party dependencies; see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
-| Project | Description |
-| --- | --- |
-| [`Core`](Core) | The `BlueHeighliner.MicroGate.Core` library, published as a NuGet package. Provides the API for enumerating SyncLink ports, opening connections to them, and exchanging HDLC/ABM frames over them, on Windows (via `mghdlc.dll`'s base API) and Linux (via the SyncLink driver's tty device). |
-| [`Sample`](Sample) | An Avalonia desktop application demonstrating `Core`: enumerate ports, connect, and send/receive messages. |
-| [`Tests`](Tests) | xUnit unit tests for `Core`. |
+## Installing
+
+```sh
+dotnet add package BlueHeighliner.MicroGate
+```
+
+## Getting started
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+IMicroGatePortSource ports = new MicroGatePortSource();
+IMicroGateConnector connector = new MicroGateConnector();
+
+IReadOnlyList<string> names = await ports.GetPorts();
+
+await using IMicroGateConnection connection = await connector.Connect(names[0]);
+connection.Received += (_, data) =>
+{
+    using (data)
+    {
+        Console.WriteLine(System.Text.Encoding.UTF8.GetString(data.Memory.Span));
+    }
+};
+
+await connection.Send("Hello"u8.ToArray());
+```
 
 ## Documentation
 
-See [`Docs`](Docs) for architecture, component, and protocol documentation:
+| File | Covers |
+| --- | --- |
+| [`Docs/Api.md`](Docs/Api.md) | The public API design and flow. |
+| [`Docs/Usage.md`](Docs/Usage.md) | Runnable usage examples. |
+| [`Docs/Architecture.md`](Docs/Architecture.md) | High-level design decisions. |
+| [`Docs/Project.md`](Docs/Project.md) | This repository's scripts, publishing, and CI. |
+| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, connection lifecycle, Linux and Windows transports). |
 
-- [`Docs/Architecture.md`](Docs/Architecture.md) — how the projects and layers fit together, and why.
-- [`Docs/Components.md`](Docs/Components.md) — what each type/file does.
-- [`Docs/Protocols.md`](Docs/Protocols.md) — the HDLC/ABM wire protocol this library implements.
+## Sample
 
-## Requirements
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- MicroGate SyncLink hardware and drivers, for running against real devices
-
-## Building
-
-```
-dotnet build
-```
-
-## Testing
-
-```
-dotnet test
-```
-
-## Running the sample
-
-```
-dotnet run --project Sample
-```
+`Sample/` is an Avalonia desktop application demonstrating the library: enumerate ports, connect, and send and receive messages. Run it with `dotnet run --project Sample`.

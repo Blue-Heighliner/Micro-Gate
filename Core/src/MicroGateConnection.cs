@@ -27,15 +27,15 @@ public interface IMicroGateConnection : IDisposable, IAsyncDisposable
     /// Sends a span of data across the connection as an HDLC frame.
     /// </summary>
     /// <param name="data">The data to send.</param>
-    /// <param name="cancellationToken">A token that can be used to cancel the send operation.</param>
+    /// <param name="cancellation">A token that can be used to cancel the send operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the data has been sent.</returns>
-    ValueTask Send(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
+    ValueTask Send(ReadOnlyMemory<byte> data, CancellationToken cancellation = default);
 
     /// <summary>
     /// Sends a span of pooled data across the connection as an HDLC frame.
     /// </summary>
     /// <param name="data">The pooled data to send. Ownership is transferred to the connection, which disposes it once the data has been sent.</param>
-    /// <param name="cancellationToken">A token that can be used to cancel the send operation.</param>
+    /// <param name="cancellation">A token that can be used to cancel the send operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the data has been sent.</returns>
-    ValueTask Send(IMemoryOwner<byte> data, CancellationToken cancellationToken = default);
+    ValueTask Send(IMemoryOwner<byte> data, CancellationToken cancellation = default);
 }

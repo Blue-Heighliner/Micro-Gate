@@ -5,7 +5,6 @@ global using Avalonia.Interactivity;
 global using Avalonia.Markup.Xaml;
 global using Avalonia.Threading;
 global using Avalonia.X11;
-global using BlueHeighliner.MicroGate.Hdlc;
 global using Microsoft.Extensions.DependencyInjection;
 global using System.Buffers;
 global using System.Collections.ObjectModel;

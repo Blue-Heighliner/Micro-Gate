@@ -1,68 +1,45 @@
-# Development Conventions
+# AGENTS.md
 
-## Language & Platform
+## Documentation
 
-- Environment is Ubuntu Linux.
-- Prefer C# if practical for any given task. Use the latest available language features.
+- Whenever a rule is added, removed, or changed in this file, re-review the whole file afterward and tighten it: merge overlapping or closely related bullets, cut redundant phrasing, and otherwise keep it as condensed as possible without dropping any distinct rule, example, or the reasoning behind a non-obvious rule.
+- Documentation stays in sync with code: review and update the relevant `Docs/` file whenever you change behavior it describes. Keep docs as brief as possible without sacrificing essential details - a concise statement of what/why beats exhaustive narration. Docs describe only current behavior - update the relevant section in place rather than layering "used to be X, now Y" notes, since git history is where past behavior belongs.
+- Do not add "See also" sections, or otherwise mention/link other doc files, from within a doc file.
+- Do not restate code comments in doc files, and do not create tables enumerating types ("types at a glance") - that's what XML doc comments and IDE navigation are for; doc files explain design, flow, and rationale instead.
+- New doc files for the design/implementation of a complex component go under `Docs/Components/`, one file per component - separate from the overall workspace documentation in `Docs/` root. A component is a related area of code or a concept, not necessarily a single type; group tightly coupled types together rather than creating one file per type.
 
-## Project Structure
+## Coding
 
-- Within each project folder, source files live under a `src` subfolder (e.g. `Core/src/Thing.cs`), not directly in the project root.
-- Architecture, component, and protocol documentation lives in the `Docs` folder at the repository root, as Markdown files (e.g. `Docs/Architecture.md`). Keep it in sync with the code it describes.
-
-## Documentation & Comments
-
-- Do not use — character
-- All `public` and `internal` types and members must have full XML documentation comments (`<summary>`, `<param>`, `<returns>`, `<exception>`, etc. as applicable).
-- When a type or member implements an already-documented interface and doesn't add meaningfully beyond that documentation, use `<inheritdoc />` instead of duplicating it.
-- Do not add inline comments within method bodies unless explaining something genuinely obscure (a non-obvious workaround, a subtle invariant, a surprising platform quirk). Code should otherwise be self-explanatory through naming and structure.
-
-## Class & Type Design
-
-- Mark all classes `sealed` unless they are explicitly designed for inheritance.
-- Prefer `record` types with `required init` properties for DTOs and models.
-- Default to `internal` visibility. Only use `public` when there's a clear reason to expose the type/member outside the assembly.
-- One type per file, with these exceptions:
-  - An interface and its implementing class are co-located in one file named after the class (e.g. `IThing` and `Thing` both live in `Thing.cs`).
-  - Extension classes are co-located with the class they extend (e.g. `ThingExtensions` also lives in `Thing.cs`).
-  - A standalone interface with no single implementing class in the same file is named after its concept without the `I` prefix (e.g. `IOther` with no co-located `Other` class lives in `Other.cs`).
-- Group static members at the top of a type, then instance members below them. Within each group, order members by kind: constructors, fields, events, properties, operators, methods. Applies to interfaces too (events, then properties, then methods) — an interface's members are not exempt just because it has no constructors or fields.
-- Always use braces for blocks — never an implicit one-line `if`/`else`/`for`/`foreach`/`while`/etc. Always write `if (...) { ... }`, never `if (...) ...`.
-- Prefer expression-bodied members over full block bodies when possible and practical (e.g. `void Do() => Action();`). For methods, when the signature and expression body don't fit on one line, wrap with `=>` indented on its own line beneath the signature, not trailing at the end of the signature line. For properties, the `=>` always stays on the same line as the signature (e.g. `public int Foo => value;`), even if the expression itself then needs to wrap onto following lines — never move the `=>` itself down to its own line as with methods.
-- Do not use comments to designate sections of members (e.g. `// ── Section ──` dividers). All members should simply be ordered according to the member ordering rule above — no additional grouping by topic/area via comments.
-- Do not define a private static field solely to back an instance property that always returns the same value. Initialize the instance property directly instead (e.g. `public IReadOnlyList<X> Foo { get; } = [...];`) rather than adding a separate `private static readonly` field just to hold that value.
-- When a property returns a reference-type value (e.g. a list, array, dictionary, or other object), prefer storing that value in the property's own backing field, computed once, rather than an expression body that constructs a new value on every access. Do `IList<int> Numbers { get; } = [5, 2, 3];`, not `IList<int> Numbers => [5, 2, 3];`.
-- Prefer private instance fields over private static fields, even when the value is the same for every instance. Reserve `static` for cases that genuinely require it (e.g. backing a static member, or a true compile-time `const`).
-- Do not prefix private field names with an underscore. Use plain camelCase for private fields (e.g. `engineController`); public/internal properties use PascalCase (e.g. `EngineController`) — the casing itself is what distinguishes a private field from a public property, not a leading underscore.
-- For private fields holding plain internal data (not an injected DI dependency), declare the field with its concrete/plain class type rather than an interface (e.g. `private readonly Dictionary<string, UserInfo> userCodes = new();`, not `IReadOnlyDictionary<string, UserInfo>`; `private readonly List<string> users = [...];`, not `IReadOnlyList<string>`). This does not apply to DI-injected constructor/property dependencies, which continue to use their interface type per the DI convention.
+- File-scoped namespaces everywhere.
+- Each project has a single `Using.cs` file containing all `global using` directives for that project. Do not place `using` directives in individual files.
+- Each project restores with a committed `packages.lock.json` (`RestorePackagesWithLockFile`). After changing a `PackageReference`, run `dotnet restore` to keep the lock file in sync. Also update `THIRD-PARTY-NOTICES.txt` for any added, removed, or upgraded dependency (direct or transitive) whose resolved set or license changed - check its license expression (`dotnet list package` or its `.nuspec` in `~/.nuget/packages/<id>/<version>/`) rather than assuming it's unchanged.
+- No comments unless the why is non-obvious - a hidden constraint, a platform quirk, a non-obvious invariant. Never comment what the code obviously does. No multi-line comment blocks, and no comments used to designate sections of members (e.g. `// ── Section ──` dividers) - order members by the rule below instead.
+- All types and members (`public` and `internal`) require full XML documentation comments (`<summary>`, `<param>`, `<returns>`, `<exception>`, etc. as applicable). Use `<inheritdoc />` on members that implement a documented interface without adding meaningful additional documentation.
+- `sealed` on all classes that are not designed for inheritance.
+- Prefer `record` types with `required init` properties for DTOs and model types.
+- `internal` by default; only `public` what a consuming application genuinely needs.
+- One type per file, with these exceptions: an interface and its implementing class are co-located in one file named after the class (e.g. `IThing` and `Thing` both live in `Thing.cs`); extension classes are co-located with the class they extend (e.g. `ThingExtensions` also lives in `Thing.cs`); a standalone interface with no co-located implementation is named after its concept without the `I` prefix (e.g. `IOther` lives in `Other.cs`).
+- Prefer extension types (`extension(Thing thing) { ... }` blocks) over classic `this`-parameter extension methods inside an extension class.
+- Member ordering: group static members at the top of a type, then instance members below them. Within each group, order members by kind: constructors, fields, events, properties, operators, methods. Applies to interfaces too (events, then properties, then methods) - an interface's members are not exempt just because it has no constructors or fields.
+- Always use braces for blocks - never an implicit one-line `if`/`else`/`for`/`foreach`/`while`/etc. Always write `if (...) { ... }`, never `if (...) ...`.
+- Prefer expression-bodied members over full block bodies when possible and practical (e.g. `void Do() => Action();`). For properties, the `=>` always stays on the same line as the signature (e.g. `public int Foo => value;`), even if the expression itself then needs to wrap onto following lines.
+- For a property returning a reference-type value (list, array, dictionary, etc.), initialize its own backing field directly, once (e.g. `public IReadOnlyList<X> Foo { get; } = [5, 2, 3];`) - not an expression body that reconstructs it on every access, and not a separate `private static readonly` field just to hold it.
+- Prefer instance over `static`: private instance fields over private static fields (even when the value is the same for every instance), and instance methods over `static` ones (even when a method touches no instance state) - reserve `static` for cases that genuinely require it (extension members, backing a static member, a genuine global access point like a service locator).
+- Avoid `const` - a `const` value is baked directly into every call site at compile time rather than read at run time, a real versioning hazard the moment it's read from a different assembly (`Tests`, in this template), and it also carries its own special-cased PascalCase naming rule that a plain field or local variable doesn't need. Use a `static readonly` field for a fixed field-level value, and a plain (non-const) local variable for one scoped to a method body, even where the value would technically qualify as a compile-time constant. The only exceptions are places C# itself requires a genuine compile-time constant - a `switch`/`case` label, or an `is X or Y` constant pattern.
+- No underscore prefix on private field names. Otherwise follow Microsoft's documented C# casing conventions: PascalCase for types, interfaces (with the customary `I` prefix), type parameters (with the customary `T` prefix), and every member regardless of accessibility; camelCase for parameters, local variables, and private fields, `const` included (per the rule above, `const` shouldn't come up - but if one is unavoidable, Microsoft's convention keeps it PascalCase at any accessibility level rather than following the plain-field camelCase rule, so a stray one doesn't silently drift out of sync with the rest of its own kind). `.editorconfig` enforces all of this mechanically.
+- For private fields holding plain internal data (not an injected DI dependency), declare the field with its concrete/plain class type rather than an interface (e.g. `private readonly Dictionary<string, Widget> widgets = new();`, not `IReadOnlyDictionary<string, Widget>`; `private readonly List<string> names = [...];`, not `IReadOnlyList<string>`). This does not apply to DI-injected constructor/property dependencies, which continue to use their interface type per the DI convention.
 - Prefer primary constructors when possible.
+- Give every non-DTO class a corresponding `IThing` interface (co-located per the file-naming rule above); constructor and property injection always uses the interface type, never the concrete class.
+- Async all the way: write all I/O as async. Avoid `Task.Result` and `.GetAwaiter().GetResult()` except where a synchronization context deadlock is explicitly being avoided at a top-level entry point. Do not append `Async` to method names - name methods by what they do, not how they do it (`Send`, not `SendAsync`). Name `CancellationToken` parameters `cancellation` (not `ct` or `cancellationToken`); framework-required overrides are the only exception.
+- Thread safety: use `SemaphoreSlim(1,1)` for async-compatible locking, `ConcurrentDictionary` for shared maps, `lock` for short synchronous critical sections.
+- Byte spans over arrays: use `ReadOnlyMemory<byte>` / `ReadOnlySpan<byte>` for payload and data-chunk parameters and return types at method boundaries; use `Memory<byte>` when the callee needs to write. Reserve `byte[]` for internal read buffers allocated with `new byte[n]` and for interop with APIs that require it.
+- No `var`: always declare the explicit type on local variables. Use C# 9+ target-typed `new()` to avoid repetition when the type is already on the left-hand side (e.g. `Widget widget = new();`). For tuple deconstructions write the types inline: `(string id, bool ok) = GetResult()`.
+- Put new unit tests (no real I/O against external dependencies) in `Tests/src/Unit/`; integration tests (real I/O) in `Tests/src/Integration/`. Put shared test infrastructure directly under `Tests/src/`. Use xUnit; mock dependencies with Moq.
+- Do not use the em dash character anywhere (code, comments, docs); use a plain hyphen.
 
-## Usings
+## Sample (Avalonia)
 
-- Each project has a single `Using.cs` file containing all `global using` directives for that project.
-- Do not place `using` directives in individual files.
+- `Sample/` is a demo application outside the published library; it follows the same coding rules and resolves dependencies through `Microsoft.Extensions.DependencyInjection`, with each public `IThing` automatically resolving to its same-named public `Thing` without explicit registration.
+- In `AppBuilder.Configure<T>().UsePlatformDetect()`, always pass `.With(new X11PlatformOptions { OverlayPopups = true })` (merge into any existing `X11PlatformOptions` rather than adding a second `.With()` call). Without it, popups render as separate X11 windows sharing a GPU context with the main window; that context can get stuck and stop repainting after rapid popup open/close cycles, workspace switches, or compositor hiccups, sometimes not clearing until a full reboot. `OverlayPopups = true` renders popups inside their owning window's own surface instead.
+- For major changes to the sample UI, run and exercise it headlessly under `xvfb-run` as part of testing; never target the real display.
 
-## Async & Performance
-
-- Use `async`/`await` instead of blocking calls.
-- Do not suffix async method names with `Async` — name them as you would any other method.
-- Prefer `Span<T>`, `ReadOnlySpan<T>`, `Memory<T>`, and `ReadOnlyMemory<T>` over raw byte arrays where applicable.
-
-## Variable Declarations
-
-- Do not use `var`. Always declare the explicit variable type.
-
-## Dependency Injection
-
-- Use an IoC container to manage and inject dependencies.
-- Configure automatic resolution of interfaces to their same-named implementation (e.g. `IThing` resolves to `Thing`) without requiring explicit registration.
-
-## Avalonia (Linux/X11)
-
-- In `AppBuilder.Configure<T>().UsePlatformDetect()`, always pass `.With(new X11PlatformOptions { OverlayPopups = true })` (merge into any existing `X11PlatformOptions` rather than adding a second `.With()` call). Without it, popups render as separate X11 windows sharing a GPU context with the main window; that context can get stuck and stop repainting after rapid popup open/close cycles, workspace switches, or compositor hiccups — sometimes not clearing until a full reboot. `OverlayPopups = true` renders popups inside their owning window's own surface instead, avoiding the whole bug class.
-
-## Testing
-
-- Create and maintain unit tests using xUnit.
-- Use mocks for dependencies under test.
-- For major changes in applications with a UI, use `xvfb` (Xvfb / `xvfb-run`) to run and exercise the application headlessly as part of testing, rather than skipping verification because no display is available, always target a virtual display — never the real/physical display.

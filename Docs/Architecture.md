@@ -1,49 +1,31 @@
 # Architecture
 
-## Solution layout
+This document explains the high-level design decisions behind the library's implementation: *why* it's built the way it is, not the class-by-class mechanics of *how*.
 
-| Project | Assembly | Purpose |
-| --- | --- | --- |
-| [`Core`](../Core) | `BlueHeighliner.MicroGate.Core` | The public API: connection/connector/port-source interfaces, the platform-agnostic HDLC engine, and the Windows/Linux native transports that implement the interfaces. Published as a NuGet package. |
-| [`Sample`](../Sample) | `BlueHeighliner.MicroGate.Sample` | An Avalonia desktop app demonstrating `Core`: enumerate ports, connect, send/receive data. |
-| [`Tests`](../Tests) | `BlueHeighliner.MicroGate.Tests` | xUnit tests for `Core`, focused on the HDLC engine (the only part testable without real hardware). |
+## One protocol engine over raw framing, on both platforms
 
-All three share the root namespace `BlueHeighliner.MicroGate`; sub-namespaces (`.Hdlc`, `.Windows`, `.Linux`) group implementation detail. See [Components.md](Components.md) for what lives where, and [Protocols.md](Protocols.md) for the HDLC/ABM wire protocol itself.
+MicroGate ships two structurally different SDKs. On Windows, `mghdlc.dll` exposes a base API (bit-level HDLC framing) and a separate link-layer API (`MgslDl*`) with its own asynchronous balanced mode (ABM) engine. On Linux, the SyncLink kernel driver exposes only a tty device with the base API's equivalent; there is no link-layer engine at all.
 
-## Layering
+Using the Windows link layer there and something else on Linux would mean two independent, potentially inconsistent implementations of the same protocol. The library instead never touches `MgslDl*`: both platforms use only the base API (flag detection, bit stuffing, CRC) and share one userspace ABM implementation, `HdlcStateMachine`, so protocol behavior cannot drift between them. The accepted trade-off is that features of the Windows link layer (automatic retries, timers) are not available; the library implements only what a directly cabled link needs.
 
-```
-IMicroGateConnector / IMicroGatePortSource / IMicroGateConnection   (public API, BlueHeighliner.MicroGate)
-                              |
-              MicroGateConnector / MicroGatePortSource               (OS dispatch via OperatingSystem.IsWindows()/IsLinux())
-                    /                                    \
-  WindowsMicroGateConnection/-Ports              LinuxMicroGateConnection/-Ports
-  (BlueHeighliner.MicroGate.Windows)               (BlueHeighliner.MicroGate.Linux)
-                    \                                    /
-                       HdlcStateMachine / HdlcFrame                  (BlueHeighliner.MicroGate.Hdlc — shared, platform-agnostic)
-                    /                                    \
-         mghdlc.dll base API (P/Invoke)              libc + SyncLink driver ioctls (P/Invoke)
-```
+## The operating system branch sits as low as possible
 
-The public interfaces (`Core/src/MicroGateConnection.cs`, `MicroGateConnector.cs`, `MicroGatePortSource.cs`) know nothing about HDLC or the operating system. `MicroGateConnector`/`MicroGatePortSource` are the only types that branch on OS, and only to pick which platform-specific implementation to construct. Everything below that point — how a frame's address/control bytes are built, how the asynchronous balanced mode (ABM) connection state machine behaves, how the poll/final bit is handled — lives once in `HdlcStateMachine` and is shared by both platforms, so their protocol behavior can't drift apart. Only the raw byte transport (how a frame's bytes physically reach the device) differs per platform, per [Protocols.md](Protocols.md#base-api-vs-link-layer).
+`MicroGateConnector` and `MicroGatePortSource` are the only types that branch on the operating system, and only to choose which platform transport to call. Everything above them (the public interfaces) knows nothing about HDLC or the OS; everything below the choice (frame building, ABM state, poll/final handling) is shared. Branching higher up would tempt each platform to grow its own protocol logic, which is the divergence the shared engine exists to prevent.
 
-## Why the OS branch happens where it does
+The platform transports sit behind internal interfaces injected through an internal constructor, so the dispatch is unit-testable with mocks while the public constructor stays free of internal types.
 
-MicroGate ships two structurally different SDKs:
+## No container dependency in the library
 
-- **Windows**: a single DLL, `mghdlc.dll`, exposing a synchronous base API (`MgslOpen`/`MgslRead`/`MgslWrite`/`MgslSetParams`/...) plus a separate link-layer API (`MgslDl*`) that implements its own ABM engine.
-- **Linux**: no DLL at all — the SyncLink kernel driver exposes a standard tty device node, configured and driven through `ioctl(2)`/`read(2)`/`write(2)` from libc. There is no link-layer engine on Linux.
+`MicroGateConnector` and `MicroGatePortSource` expose a single public parameterless constructor each, with configuration supplied per `Connect` call, and every implementation is a plain class behind an `IThing` interface, so any container resolves them by naming convention with no explicit registration or configuration object. The library itself references no container and no other package; only the sample application wires one up.
 
-Since only Windows has a built-in ABM engine, using it there and something else on Linux would mean two independent, potentially inconsistent implementations of the same protocol. `Core` avoids that by never using `mghdlc.dll`'s `MgslDl*` functions — it only calls the *base* API (bit-level HDLC framing: flag detection, bit stuffing, CRC) on both platforms, and layers its own `HdlcStateMachine` on top of that raw framing on both platforms identically. This is why the OS branch is pushed as low as possible (into `MicroGateConnector`/`MicroGatePortSource`, choosing a transport) rather than high up (which would tempt each platform into its own protocol logic).
+## One dedicated reader per connection
 
-## Dependency injection
+Each connection owns one background task that blocks on the device read for the connection's lifetime. That loop is the only place inbound frames are parsed and answered, so protocol responses (acknowledgements, rejects) are produced in exactly one place, in receive order. Blocking reads were chosen over polling or overlapped I/O because both native APIs offer a blocking read that a receiver disable reliably interrupts, the same technique the vendor SDK samples use to cancel a pending read. The cost is one thread per open connection.
 
-`Core` has no dependency on any DI container — it is a plain library. `Sample` is where a container is wired up (per [`AGENTS.md`](../AGENTS.md)'s DI convention), in `Sample/src/Program.cs`:
+## No retransmission window
 
-- `ConventionServiceCollectionExtensions.AddConventionServices` scans an assembly (here, `Core`) and registers every public `IThing` against a public, non-abstract class `Thing` in the same namespace, if one exists and implements it — so `IMicroGateConnector` resolves to `MicroGateConnector` and `IMicroGatePortSource` resolves to `MicroGatePortSource` with no explicit registration.
-- `HdlcStationOptions` (the station address and the poll/final-bit-disable flag) is registered as a singleton instance, since `MicroGateConnector` takes it as a constructor dependency.
-- `MainWindow` is registered explicitly (it isn't behind an interface, so the naming convention doesn't apply) and resolved by `App.axaml.cs` in place of `new MainWindow()`.
+`ReceiveReady`, `ReceiveNotReady`, and `Reject` frames received from the peer are observed for connection state only; there is no send window or retransmission buffer. On a directly cabled link the driver's CRC check already discards corrupted frames, so a resend buffer would add complexity for a failure mode the link rarely has. Extending the library to lossy or shared-media links would need one.
 
-## Concurrency model
+## Pooled payload delivery
 
-Each `IMicroGateConnection` implementation (`LinuxMicroGateConnection`, `WindowsMicroGateConnection`) owns one dedicated background task running a blocking read loop for the lifetime of the connection. That loop is the only place frames are received, parsed, and — via `HdlcStateMachine` — turned into either a delivered payload (`Received` event) or an automatic protocol response (e.g. `UA` for an inbound `SABM`, `RR`/`REJ` for an inbound `I`-frame), which the loop writes back itself. `Send` calls, and the loop's own automatic responses, both funnel through a single `WriteFrame` method guarded by a `Lock`, so frame writes never interleave. See [Components.md](Components.md#connection-lifecycle) for the exact sequencing.
+Received payloads are handed to subscribers as pooled `IMemoryOwner<byte>` values rather than fresh arrays, so high-rate small-frame traffic does not allocate per frame. The price is an ownership contract: the subscriber must dispose every payload.
