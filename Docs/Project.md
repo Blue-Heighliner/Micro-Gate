@@ -35,6 +35,16 @@ Run `Scripts/Publish.cs` locally to cut a release:
   and the run being on `main`, and pushes the package to both GitHub Packages and nuget.org.
 - `.github/workflows/codeql.yml` - CodeQL security analysis on push/PR to `main` and a weekly schedule.
 
+## Tests
+
+`Tests/src/Unit/` mirrors `Core/src` and uses Moq for every dependency; it needs no real I/O. `Tests/src/Integration/` uses real I/O and is organized by scenario:
+
+- Two connections joined by a loopback TCP socket pair standing in for the cable (handshake, ordering, large payloads, disconnect).
+- The Linux connector and native layer against a real pseudo-terminal, with a peer implementing the HDLC state machine on the master side, plus regular files and missing devices for failure paths.
+- Port enumeration against a temporary folder tree shaped like `/dev` and `/sys/class/tty`.
+
+Linux-only tests return early on other operating systems, and the pseudo-terminal test returns early if none can be created. The Windows native adapter can only be exercised on Windows with the driver installed, so it has no test.
+
 ## Sample
 
 `Sample/` is an Avalonia demo application, not part of the published package. Run it with

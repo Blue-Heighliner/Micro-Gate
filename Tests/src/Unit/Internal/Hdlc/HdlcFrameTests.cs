@@ -94,4 +94,32 @@ public sealed class HdlcFrameTests
         Assert.Equal(kind, parsed.Kind);
         Assert.True(parsed.PollFinal);
     }
+
+    [Fact]
+    public void Parse_UnsupportedSupervisoryControlByte_Throws()
+    {
+        byte[] data = [0xFF, 0x0D];
+
+        Assert.Throws<HdlcFrameException>(() => HdlcFrame.Parse(data));
+    }
+
+    [Fact]
+    public void ToArray_UnrecognizedKind_Throws()
+    {
+        HdlcFrame frame = new() { Address = 1, Kind = (HdlcFrameKind)99, PollFinal = false };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => frame.ToArray());
+    }
+
+    [Fact]
+    public void ToArray_EncodesKnownControlBytes()
+    {
+        Assert.Equal(new byte[] { 0x01, 0x3F }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.SetAsynchronousBalancedMode, PollFinal = true }.ToArray());
+        Assert.Equal(new byte[] { 0x01, 0x43 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.Disconnect, PollFinal = false }.ToArray());
+        Assert.Equal(new byte[] { 0x01, 0x73 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.UnnumberedAcknowledge, PollFinal = true }.ToArray());
+        Assert.Equal(new byte[] { 0x01, 0x01 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.ReceiveReady, PollFinal = false }.ToArray());
+        Assert.Equal(new byte[] { 0x01, 0xA5 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.ReceiveNotReady, PollFinal = false, ReceiveSequence = 5 }.ToArray());
+        Assert.Equal(new byte[] { 0x01, 0x09 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.Reject, PollFinal = false }.ToArray());
+        Assert.Equal(new byte[] { 0x01, 0xA6, 9 }, new HdlcFrame { Address = 1, Kind = HdlcFrameKind.Information, PollFinal = false, SendSequence = 3, ReceiveSequence = 5, Payload = new byte[] { 9 } }.ToArray());
+    }
 }

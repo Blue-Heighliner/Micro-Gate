@@ -26,7 +26,7 @@ public sealed class MicroGatePortSource : IMicroGatePortSource
     /// Initializes a new instance of the <see cref="MicroGatePortSource"/> class.
     /// </summary>
     public MicroGatePortSource()
-        : this(new LinuxMicroGatePorts(), new WindowsMicroGatePorts())
+        : this(new LinuxMicroGatePorts(), new WindowsMicroGatePorts(new WindowsNative()))
     {
     }
 

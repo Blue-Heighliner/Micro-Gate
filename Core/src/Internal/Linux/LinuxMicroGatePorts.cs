@@ -17,20 +17,40 @@ internal interface ILinuxMicroGatePorts
 /// </summary>
 internal sealed class LinuxMicroGatePorts : ILinuxMicroGatePorts
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LinuxMicroGatePorts"/> class that enumerates the real <c>/dev</c> and <c>/sys/class/tty</c> folders.
+    /// </summary>
+    public LinuxMicroGatePorts()
+        : this("/dev", "/sys/class/tty")
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LinuxMicroGatePorts"/> class that enumerates the specified folders.
+    /// </summary>
+    /// <param name="devicePath">The folder containing the tty device nodes.</param>
+    /// <param name="sysClassTtyPath">The folder describing each tty in the style of <c>/sys/class/tty</c>.</param>
+    public LinuxMicroGatePorts(string devicePath, string sysClassTtyPath)
+    {
+        this.devicePath = devicePath;
+        this.sysClassTtyPath = sysClassTtyPath;
+    }
+
+    private readonly string devicePath;
+    private readonly string sysClassTtyPath;
     private readonly string pciDeviceSearchPattern = "ttySLG*";
     private readonly string usbDeviceSearchPattern = "ttyUSB*";
     private readonly string microGateUsbVendorId = "2618";
-    private readonly string sysClassTtyPath = "/sys/class/tty";
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<string>> GetPorts()
     {
         List<string> ports = [];
 
-        if (Directory.Exists("/dev"))
+        if (Directory.Exists(devicePath))
         {
-            ports.AddRange(Directory.EnumerateFiles("/dev", pciDeviceSearchPattern).Select(Path.GetFileName)!);
-            ports.AddRange(Directory.EnumerateFiles("/dev", usbDeviceSearchPattern).Select(Path.GetFileName).Where(IsMicroGateUsbDevice)!);
+            ports.AddRange(Directory.EnumerateFiles(devicePath, pciDeviceSearchPattern).Select(Path.GetFileName)!);
+            ports.AddRange(Directory.EnumerateFiles(devicePath, usbDeviceSearchPattern).Select(Path.GetFileName).Where(IsMicroGateUsbDevice)!);
         }
 
         ports.Sort(StringComparer.Ordinal);

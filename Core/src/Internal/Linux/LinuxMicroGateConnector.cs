@@ -8,7 +8,7 @@ internal interface ILinuxMicroGateConnector
     /// <summary>
     /// Opens and configures the tty device for the specified port and establishes an asynchronous balanced mode connection over it.
     /// </summary>
-    /// <param name="portName">The name of the tty device, with or without the <c>/dev/</c> prefix.</param>
+    /// <param name="portName">The name of the tty device under <c>/dev</c>, or its full path.</param>
     /// <param name="options">The device and HDLC configuration applied to the connection.</param>
     /// <param name="cancellation">A token that can be used to cancel the connect operation.</param>
     /// <returns>A <see cref="ValueTask{TResult}"/> that completes with the opened connection.</returns>
@@ -19,31 +19,33 @@ internal interface ILinuxMicroGateConnector
 /// <summary>
 /// <inheritdoc cref="ILinuxMicroGateConnector" />
 /// </summary>
-internal sealed class LinuxMicroGateConnector : ILinuxMicroGateConnector
+/// <param name="native">The native device operations.</param>
+internal sealed class LinuxMicroGateConnector(ILinuxNative native) : ILinuxMicroGateConnector
 {
     private readonly string devicePathPrefix = "/dev/";
 
     /// <inheritdoc />
     public async ValueTask<IMicroGateConnection> Connect(string portName, MicroGateConnectionOptions options, CancellationToken cancellation)
     {
-        string path = portName.StartsWith(devicePathPrefix, StringComparison.Ordinal) ? portName : devicePathPrefix + portName;
-        int fileDescriptor = LibC.Open(path, SynclinkConstants.FileAccessReadWrite | SynclinkConstants.FileStatusNonBlocking);
+        string path = Path.IsPathRooted(portName) ? portName : devicePathPrefix + portName;
+        int fileDescriptor = native.Open(path);
         if (fileDescriptor < 0)
         {
             throw new IOException($"Failed to open '{path}'.", new Win32Exception(Marshal.GetLastPInvokeError()));
         }
 
+        LinuxMicroGateDevice device = new(native, fileDescriptor);
         try
         {
             ConfigurePort(fileDescriptor, options);
         }
         catch
         {
-            LibC.Close(fileDescriptor);
+            device.Dispose();
             throw;
         }
 
-        LinuxMicroGateConnection connection = new(fileDescriptor, new HdlcStateMachine(options));
+        MicroGateDeviceConnection connection = new(device, new HdlcStateMachine(options));
         try
         {
             await connection.Establish(cancellation).ConfigureAwait(false);
@@ -59,8 +61,7 @@ internal sealed class LinuxMicroGateConnector : ILinuxMicroGateConnector
 
     private void ConfigurePort(int fileDescriptor, MicroGateConnectionOptions options)
     {
-        int lineDiscipline = SynclinkConstants.LineDisciplineHdlc;
-        LibC.Ioctl(fileDescriptor, SynclinkConstants.SetLineDiscipline, ref lineDiscipline);
+        native.SelectHdlcLineDiscipline(fileDescriptor);
 
         SynclinkParams parameters = new()
         {
@@ -69,13 +70,11 @@ internal sealed class LinuxMicroGateConnector : ILinuxMicroGateConnector
             CrcType = (ushort)options.Crc,
             AddressFilter = options.HardwareAddressFilter ?? SynclinkConstants.AddressFilterDisabled,
         };
-        LibC.Ioctl(fileDescriptor, SynclinkConstants.SetParams, ref parameters);
+        native.SetParams(fileDescriptor, parameters);
 
-        LibC.Ioctl(fileDescriptor, SynclinkConstants.SetTransmitIdle, (nint)options.IdlePattern);
-        LibC.Ioctl(fileDescriptor, SynclinkConstants.EnableReceiver, (nint)SynclinkConstants.Enabled);
-        LibC.Ioctl(fileDescriptor, SynclinkConstants.EnableTransmitter, (nint)SynclinkConstants.Enabled);
-
-        int flags = LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlGetFlags);
-        LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlSetFlags, flags & SynclinkConstants.FileStatusFlagMask);
+        native.SetTransmitIdle(fileDescriptor, (int)options.IdlePattern);
+        native.EnableReceiver(fileDescriptor, true);
+        native.EnableTransmitter(fileDescriptor, true);
+        native.ClearNonBlocking(fileDescriptor);
     }
 }

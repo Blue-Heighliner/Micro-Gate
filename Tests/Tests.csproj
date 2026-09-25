@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>BlueHeighliner.MicroGate</RootNamespace>
     <AssemblyName>BlueHeighliner.MicroGate.Tests</AssemblyName>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

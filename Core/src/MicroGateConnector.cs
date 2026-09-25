@@ -29,7 +29,7 @@ public sealed class MicroGateConnector : IMicroGateConnector
     /// Initializes a new instance of the <see cref="MicroGateConnector"/> class.
     /// </summary>
     public MicroGateConnector()
-        : this(new LinuxMicroGateConnector(), new WindowsMicroGateConnector())
+        : this(new LinuxMicroGateConnector(new LinuxNative()), new WindowsMicroGateConnector(new WindowsNative()))
     {
     }
 

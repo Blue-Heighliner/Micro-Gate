@@ -1,24 +1,23 @@
-namespace BlueHeighliner.MicroGate.Windows;
+namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// An <see cref="IMicroGateConnection"/> to a MicroGate SyncLink device attached to a Windows system, exchanging HDLC frames through the SyncLink driver's raw bit-framing base API (<c>mghdlc.dll</c>) while <see cref="HdlcStateMachine"/> maintains the asynchronous balanced mode connection and generates each frame's address and control bytes.
+/// An <see cref="IMicroGateConnection"/> over an <see cref="IMicroGateDevice"/>, exchanging HDLC frames through the device's raw bit-framing layer while <see cref="IHdlcStateMachine"/> maintains the asynchronous balanced mode connection and generates each frame's address and control bytes.
 /// </summary>
-[SupportedOSPlatform("windows")]
-internal sealed class WindowsMicroGateConnection : IMicroGateConnection
+internal sealed class MicroGateDeviceConnection : IMicroGateConnection
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="WindowsMicroGateConnection"/> class and starts its receive loop.
+    /// Initializes a new instance of the <see cref="MicroGateDeviceConnection"/> class and starts its receive loop.
     /// </summary>
-    /// <param name="handle">The opened and configured device handle, owned by the connection from this point on.</param>
+    /// <param name="device">The opened and configured device, owned by the connection from this point on.</param>
     /// <param name="stateMachine">The state machine that maintains the asynchronous balanced mode connection.</param>
-    public WindowsMicroGateConnection(nint handle, IHdlcStateMachine stateMachine)
+    public MicroGateDeviceConnection(IMicroGateDevice device, IHdlcStateMachine stateMachine)
     {
-        this.handle = handle;
+        this.device = device;
         this.stateMachine = stateMachine;
         receiveLoopTask = Task.Run(ReceiveLoop);
     }
 
-    private readonly nint handle;
+    private readonly IMicroGateDevice device;
     private readonly IHdlcStateMachine stateMachine;
     private readonly Lock writeLock = new();
     private readonly TaskCompletionSource connectionEstablished = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -89,7 +88,7 @@ internal sealed class WindowsMicroGateConnection : IMicroGateConnection
             }
         }
 
-        Mghdlc.MgslEnableReceiver(handle, MghdlcConstants.Disabled);
+        device.DisableReceiver();
 
         try
         {
@@ -99,7 +98,7 @@ internal sealed class WindowsMicroGateConnection : IMicroGateConnection
         {
         }
 
-        Mghdlc.MgslClose(handle);
+        device.Dispose();
     }
 
     private void ReceiveLoop()
@@ -109,7 +108,7 @@ internal sealed class WindowsMicroGateConnection : IMicroGateConnection
 
         while (true)
         {
-            int bytesRead = Mghdlc.MgslRead(handle, buffer, buffer.Length);
+            int bytesRead = device.Read(buffer);
             if (bytesRead <= 0)
             {
                 break;
@@ -157,15 +156,9 @@ internal sealed class WindowsMicroGateConnection : IMicroGateConnection
 
     private void WriteFrame(ReadOnlyMemory<byte> frame)
     {
-        byte[] buffer = frame.ToArray();
-
         lock (writeLock)
         {
-            int bytesWritten = Mghdlc.MgslWrite(handle, buffer, buffer.Length);
-            if (bytesWritten != buffer.Length)
-            {
-                throw new IOException("Failed to write the frame to the device.");
-            }
+            device.Write(frame);
         }
     }
 }

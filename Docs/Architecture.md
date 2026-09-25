@@ -18,6 +18,10 @@ The platform transports sit behind internal interfaces injected through an inter
 
 `MicroGateConnector` and `MicroGatePortSource` expose a single public parameterless constructor each, with configuration supplied per `Connect` call, and every implementation is a plain class behind an `IThing` interface, so any container resolves them by naming convention with no explicit registration or configuration object. The library itself references no container and no other package; only the sample application wires one up.
 
+## A native interface at the bottom of each transport
+
+Each platform's P/Invoke surface is wrapped by a small interface (`ILinuxNative`, `IWindowsNative`) of semantic operations, and everything above it (devices, connectors, port enumeration) depends only on that interface. The connection itself depends on an even smaller `IMicroGateDevice`, shared by both platforms. The alternative, calling the static P/Invoke methods directly, would make every path from opening a device to receiving a frame untestable without hardware and, for Windows, without Windows. The accepted cost is one thin, untested-by-mocks adapter per platform, covered instead by integration tests against a real tty on Linux.
+
 ## One dedicated reader per connection
 
 Each connection owns one background task that blocks on the device read for the connection's lifetime. That loop is the only place inbound frames are parsed and answered, so protocol responses (acknowledgements, rejects) are produced in exactly one place, in receive order. Blocking reads were chosen over polling or overlapped I/O because both native APIs offer a blocking read that a receiver disable reliably interrupts, the same technique the vendor SDK samples use to cancel a pending read. The cost is one thread per open connection.

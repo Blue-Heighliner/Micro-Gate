@@ -13,40 +13,36 @@ internal interface IWindowsMicroGateConnector
     /// <param name="cancellation">A token that can be used to cancel the connect operation.</param>
     /// <returns>A <see cref="ValueTask{TResult}"/> that completes with the opened connection.</returns>
     /// <exception cref="IOException">The device could not be opened, or a connection could not be established.</exception>
-    /// <exception cref="PlatformNotSupportedException">The current operating system is not Windows.</exception>
     ValueTask<IMicroGateConnection> Connect(string portName, MicroGateConnectionOptions options, CancellationToken cancellation);
 }
 
 /// <summary>
 /// <inheritdoc cref="IWindowsMicroGateConnector" />
 /// </summary>
-internal sealed class WindowsMicroGateConnector : IWindowsMicroGateConnector
+/// <param name="native">The native device operations.</param>
+internal sealed class WindowsMicroGateConnector(IWindowsNative native) : IWindowsMicroGateConnector
 {
     /// <inheritdoc />
     public async ValueTask<IMicroGateConnection> Connect(string portName, MicroGateConnectionOptions options, CancellationToken cancellation)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            throw new PlatformNotSupportedException("The Windows MicroGate transport is only supported on Windows.");
-        }
-
-        uint openStatus = Mghdlc.MgslOpenByName(portName, out nint handle);
+        uint openStatus = native.OpenByName(portName, out nint handle);
         if (openStatus != MghdlcConstants.Success)
         {
             throw new IOException($"Failed to open '{portName}'.", new Win32Exception((int)openStatus));
         }
 
+        WindowsMicroGateDevice device = new(native, handle);
         try
         {
             ConfigurePort(handle, options);
         }
         catch
         {
-            Mghdlc.MgslClose(handle);
+            device.Dispose();
             throw;
         }
 
-        WindowsMicroGateConnection connection = new(handle, new HdlcStateMachine(options));
+        MicroGateDeviceConnection connection = new(device, new HdlcStateMachine(options));
         try
         {
             await connection.Establish(cancellation).ConfigureAwait(false);
@@ -60,7 +56,6 @@ internal sealed class WindowsMicroGateConnector : IWindowsMicroGateConnector
         return connection;
     }
 
-    [SupportedOSPlatform("windows")]
     private void ConfigurePort(nint handle, MicroGateConnectionOptions options)
     {
         MghdlcParams parameters = new()
@@ -70,10 +65,10 @@ internal sealed class WindowsMicroGateConnector : IWindowsMicroGateConnector
             CrcType = (ushort)options.Crc,
             Addr = options.HardwareAddressFilter ?? MghdlcConstants.AddressFilterDisabled,
         };
-        Mghdlc.MgslSetParams(handle, ref parameters);
+        native.SetParams(handle, parameters);
 
-        Mghdlc.MgslSetIdleMode(handle, (uint)options.IdlePattern);
-        Mghdlc.MgslEnableReceiver(handle, MghdlcConstants.Enabled);
-        Mghdlc.MgslEnableTransmitter(handle, MghdlcConstants.Enabled);
+        native.SetIdleMode(handle, (uint)options.IdlePattern);
+        native.EnableReceiver(handle, true);
+        native.EnableTransmitter(handle, true);
     }
 }
