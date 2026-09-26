@@ -5,10 +5,11 @@ public sealed class SynclinkConstantsTests
     [Fact]
     public void RequestCodes_MatchKernelIoctlEncoding()
     {
-        Assert.Equal(0x6D02, SynclinkConstants.SetTransmitIdle);
-        Assert.Equal(0x6D04, SynclinkConstants.EnableTransmitter);
-        Assert.Equal(0x6D05, SynclinkConstants.EnableReceiver);
-        Assert.Equal((1 << 30) | (Marshal.SizeOf<SynclinkParams>() << 16) | (0x6D << 8), SynclinkConstants.SetParams);
+        Assert.Equal((nuint)0x6D02, SynclinkConstants.SetTransmitIdle);
+        Assert.Equal((nuint)0x6D04, SynclinkConstants.EnableTransmitter);
+        Assert.Equal((nuint)0x6D05, SynclinkConstants.EnableReceiver);
+        Assert.Equal((nuint)0x5423, SynclinkConstants.SetLineDiscipline);
+        Assert.Equal((nuint)(uint)((1 << 30) | (Marshal.SizeOf<SynclinkParams>() << 16) | (0x6D << 8)), SynclinkConstants.SetParams);
     }
 
     [Fact]

@@ -824,7 +824,9 @@ public sealed class MicroGatePeerTests : IDisposable
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 2 }));
 
-        Assert.Equal(new byte[] { 2 }, await late.Next());
+        byte[] first = await late.Next();
+        byte[] latest = first[0] == 2 ? first : await late.Next();
+        Assert.Equal(new byte[] { 2 }, latest);
     }
 
     [Fact]
@@ -994,6 +996,119 @@ public sealed class MicroGatePeerTests : IDisposable
         await states.Completed.WaitAsync(timeout);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await peer.Send(new byte[] { 1 }));
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Dispose_FromObserverWhenRetransmissionGivesUp_ReturnsWithoutWaitingForTheShutdownTimeout()
+    {
+        MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(40), MaxRetransmissions = 1 };
+        MicroGatePeer peer = harness.CreatePeer(TimeSpan.FromSeconds(30));
+        Task starting = peer.Start("port", quick).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await starting.WaitAsync(timeout);
+        TaskCompletionSource<TimeSpan> disposeTook = new();
+        peer.StateChanged.Subscribe(new CallbackObserver<MicroGatePeerState>(state =>
+        {
+            if (state == MicroGatePeerState.Disconnected)
+            {
+                Stopwatch watch = Stopwatch.StartNew();
+                peer.Dispose();
+                disposeTook.TrySetResult(watch.Elapsed);
+            }
+        }));
+
+        await peer.Send(new byte[] { 1 });
+
+        Assert.True(await disposeTook.Task.WaitAsync(timeout) < TimeSpan.FromSeconds(5));
+        await Eventually(() => harness.Device.Invocations.Count(invocation => invocation.Method.Name == nameof(IMicroGateDevice.Dispose)) == 1);
+    }
+
+    [Fact]
+    public async Task Start_WhenDisposedWhileWaitingForTheRemotePeer_ThrowsObjectDisposedException()
+    {
+        MicroGatePeer peer = harness.CreatePeer();
+        Task starting = peer.Start("port", harness.Options).AsTask();
+        await harness.NextWritten(0);
+
+        await peer.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => starting);
+        Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
+        harness.Device.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Start_WithSubMillisecondRetransmitInterval_StaysConnected()
+    {
+        MicroGatePeer peer = harness.CreatePeer();
+        Task starting = peer.Start("port", harness.Options with { RetransmitInterval = TimeSpan.FromTicks(5000) }).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await starting.WaitAsync(timeout);
+
+        await Task.Delay(150);
+
+        Assert.True(peer.IsConnected);
+        await peer.DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Start_WithIntervalLongerThanSupported_ThrowsAndStaysIdle(bool retry)
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+        TimeSpan tooLong = TimeSpan.FromMilliseconds(int.MaxValue) + TimeSpan.FromMilliseconds(1);
+        MicroGatePeerOptions options = retry ? new() { RetryInterval = tooLong } : new() { RetransmitInterval = tooLong };
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", options));
+
+        Assert.Equal(MicroGatePeerState.Idle, peer.State);
+    }
+
+    [Fact]
+    public async Task Received_ItemsAndCompletionAreNeverDeliveredConcurrently()
+    {
+        MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(30), MaxRetransmissions = 1 };
+        MicroGatePeer peer = harness.CreatePeer();
+        Task starting = peer.Start("port", quick).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await starting.WaitAsync(timeout);
+        int inside = 0;
+        bool overlapped = false;
+        TaskCompletionSource completed = new();
+        peer.Received.Subscribe(
+            _ =>
+            {
+                if (Interlocked.Increment(ref inside) > 1)
+                {
+                    overlapped = true;
+                }
+
+                Thread.Sleep(20);
+                Interlocked.Decrement(ref inside);
+            },
+            () =>
+            {
+                if (Volatile.Read(ref inside) > 0)
+                {
+                    overlapped = true;
+                }
+
+                completed.TrySetResult();
+            });
+
+        await peer.Send(new byte[] { 1 });
+        for (int i = 0; i < 10; i++)
+        {
+            harness.Receive(harness.Peer(HdlcFrameKind.Information, false, i % 8, new byte[] { (byte)i }));
+        }
+
+        await completed.Task.WaitAsync(timeout);
+        Assert.False(overlapped);
         await peer.DisposeAsync();
     }
 }

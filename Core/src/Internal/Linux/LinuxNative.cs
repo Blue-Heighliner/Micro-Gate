@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate.Linux;
 
 /// <summary>
-/// The SyncLink tty device operations used on Linux, expressed without native types so the code driving them can be exercised without a device.
+/// The SyncLink tty device operations used on Linux, expressed without native types so the code driving them can be exercised without a device. A call interrupted by a signal (<c>EINTR</c>) is retried, and an interrupted wait is reported as a timeout, instead of surfacing as a failure.
 /// </summary>
 internal interface ILinuxNative
 {
@@ -102,6 +102,8 @@ internal interface ILinuxNative
 /// </summary>
 internal sealed class LinuxNative : ILinuxNative
 {
+    private readonly int interrupted = 4;
+
     /// <inheritdoc />
     public int Open(string path) => LibC.Open(path, SynclinkConstants.FileAccessReadWrite | SynclinkConstants.FileStatusNonBlocking | SynclinkConstants.FileNoControllingTerminal);
 
@@ -109,21 +111,56 @@ internal sealed class LinuxNative : ILinuxNative
     public int Close(int fileDescriptor) => LibC.Close(fileDescriptor);
 
     /// <inheritdoc />
-    public int Read(int fileDescriptor, byte[] buffer) => (int)LibC.Read(fileDescriptor, buffer, (nuint)buffer.Length);
+    public int Read(int fileDescriptor, byte[] buffer)
+    {
+        while (true)
+        {
+            int result = (int)LibC.Read(fileDescriptor, buffer, (nuint)buffer.Length);
+            if (result >= 0 || !WasInterrupted())
+            {
+                return result;
+            }
+        }
+    }
 
     /// <inheritdoc />
-    public int Write(int fileDescriptor, byte[] buffer) => (int)LibC.Write(fileDescriptor, buffer, (nuint)buffer.Length);
+    public int Write(int fileDescriptor, byte[] buffer)
+    {
+        while (true)
+        {
+            int result = (int)LibC.Write(fileDescriptor, buffer, (nuint)buffer.Length);
+            if (result >= 0 || !WasInterrupted())
+            {
+                return result;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public int WaitReadable(int fileDescriptor, int timeoutMilliseconds)
     {
         PollDescriptor descriptor = new() { FileDescriptor = fileDescriptor, Events = SynclinkConstants.PollReadable };
         int result = LibC.Poll(ref descriptor, 1, timeoutMilliseconds);
+        if (result < 0 && WasInterrupted())
+        {
+            return 0;
+        }
+
         return result > 0 ? 1 : result;
     }
 
     /// <inheritdoc />
-    public int Drain(int fileDescriptor) => LibC.Tcdrain(fileDescriptor);
+    public int Drain(int fileDescriptor)
+    {
+        while (true)
+        {
+            int result = LibC.Tcdrain(fileDescriptor);
+            if (result >= 0 || !WasInterrupted())
+            {
+                return result;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public int SelectHdlcLineDiscipline(int fileDescriptor)
@@ -155,4 +192,6 @@ internal sealed class LinuxNative : ILinuxNative
 
         return LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlSetFlags, flags & SynclinkConstants.FileStatusFlagMask);
     }
+
+    private bool WasInterrupted() => Marshal.GetLastPInvokeError() == interrupted;
 }

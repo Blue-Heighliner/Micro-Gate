@@ -65,31 +65,31 @@ internal static partial class LibC
     /// Performs a device-specific control operation carrying an <see cref="int"/> argument by reference, per POSIX <c>ioctl(2)</c>.
     /// </summary>
     /// <param name="fd">The file descriptor to operate on.</param>
-    /// <param name="request">The device-specific request code.</param>
+    /// <param name="request">The device-specific request code, an <c>unsigned long</c> in the C declaration.</param>
     /// <param name="argument">The request argument.</param>
     /// <returns>A request-dependent result, or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "ioctl", SetLastError = true)]
-    public static partial int Ioctl(int fd, int request, ref int argument);
+    public static partial int Ioctl(int fd, nuint request, ref int argument);
 
     /// <summary>
     /// Performs a device-specific control operation carrying a <see cref="SynclinkParams"/> argument by reference, per POSIX <c>ioctl(2)</c>.
     /// </summary>
     /// <param name="fd">The file descriptor to operate on.</param>
-    /// <param name="request">The device-specific request code.</param>
+    /// <param name="request">The device-specific request code, an <c>unsigned long</c> in the C declaration.</param>
     /// <param name="argument">The request argument.</param>
     /// <returns>A request-dependent result, or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "ioctl", SetLastError = true)]
-    public static partial int Ioctl(int fd, int request, ref SynclinkParams argument);
+    public static partial int Ioctl(int fd, nuint request, ref SynclinkParams argument);
 
     /// <summary>
     /// Performs a device-specific control operation carrying an immediate argument, per POSIX <c>ioctl(2)</c>.
     /// </summary>
     /// <param name="fd">The file descriptor to operate on.</param>
-    /// <param name="request">The device-specific request code.</param>
+    /// <param name="request">The device-specific request code, an <c>unsigned long</c> in the C declaration.</param>
     /// <param name="argument">The request argument.</param>
     /// <returns>A request-dependent result, or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "ioctl", SetLastError = true)]
-    public static partial int Ioctl(int fd, int request, nint argument);
+    public static partial int Ioctl(int fd, nuint request, nint argument);
 
     /// <summary>
     /// Waits for a file descriptor to become ready, per POSIX <c>poll(2)</c>.

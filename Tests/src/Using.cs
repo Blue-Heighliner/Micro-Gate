@@ -1,9 +1,10 @@
 global using System.Buffers;
 global using System.Collections.Concurrent;
+global using System.Diagnostics;
 global using System.Net;
-global using System.Text;
 global using System.Net.Sockets;
 global using System.Runtime.InteropServices;
+global using System.Text;
 global using BlueHeighliner.MicroGate.Hdlc;
 global using BlueHeighliner.MicroGate.Linux;
 global using BlueHeighliner.MicroGate.Windows;

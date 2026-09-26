@@ -9,7 +9,7 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// Gets a stream of the data received from the remote peer, one item per HDLC information frame, in order and without gaps. The stream completes when the peer becomes <see cref="MicroGatePeerState.Disconnected"/>.
     /// </summary>
     /// <remarks>
-    /// The stream is hot: data that arrives while nothing is subscribed is acknowledged to the remote peer and then discarded, so subscribe before calling <see cref="Start"/>. Every observer is given the same memory, which is backed by an array allocated for that frame and is never reused, so it may be kept or handed to another thread. It is shared and must not be modified. An observer that throws from <c>OnNext</c> is unsubscribed and does not affect other observers or the peer.
+    /// The stream is hot: data that arrives while nothing is subscribed is acknowledged to the remote peer and then discarded, so subscribe before calling <see cref="Start"/>. Items and state changes are delivered one at a time, in order, and never while the peer holds a lock. Every observer is given the same memory, which is backed by an array allocated for that frame and is never reused, so it may be kept or handed to another thread. It is shared and must not be modified. An observer that throws from <c>OnNext</c> is unsubscribed and does not affect other observers or the peer.
     /// </remarks>
     IObservable<ReadOnlyMemory<byte>> Received { get; }
 
@@ -40,10 +40,11 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// <param name="options">The device and HDLC settings to apply, or <see langword="null"/> to use the defaults.</param>
     /// <param name="cancellation">A token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Connected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/>, <see cref="MicroGatePeerOptions.RetransmitInterval"/>, or <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/> or <see cref="MicroGatePeerOptions.RetransmitInterval"/> is zero, negative, or longer than <see cref="int.MaxValue"/> milliseconds, or <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative.</exception>
     /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     /// <exception cref="InvalidOperationException">The peer has already been started or has been disposed.</exception>
     /// <exception cref="IOException">The device could not be opened, or it closed before a connection was established.</exception>
+    /// <exception cref="ObjectDisposedException">The peer was disposed before the connection was established.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellation"/> was canceled.</exception>
     /// <remarks>
     /// An invalid argument or unsupported platform leaves the peer <see cref="MicroGatePeerState.Idle"/>; any failure after that disposes the peer, leaving it <see cref="MicroGatePeerState.Disconnected"/>.
@@ -114,6 +115,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private readonly CancellationTokenSource lifetime = new();
     private readonly TaskCompletionSource connectionEstablished = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly int maxFrameSize = 65535;
+    private readonly TimeSpan maxInterval = TimeSpan.FromMilliseconds(int.MaxValue);
     private MicroGatePeerOptions options = new();
     private IHdlcStateMachine? stateMachine;
     private SemaphoreSlim? sendWindow;
@@ -123,11 +125,9 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private MicroGatePeerState state = MicroGatePeerState.Idle;
     private long unacknowledgedSince;
     private int retransmitAttempts;
-    private int loopThreadId;
-    private bool notifying;
+    private int notifyingThreadId;
     private bool finished;
     private bool disposed;
-    private bool disposeOnLoopExit;
 
     /// <inheritdoc />
     public IObservable<ReadOnlyMemory<byte>> Received { get; }
@@ -197,6 +197,23 @@ public sealed class MicroGatePeer : IMicroGatePeer
             cancellation.ThrowIfCancellationRequested();
             await Establish(cancellation).ConfigureAwait(false);
         }
+        catch (Exception exception) when (exception is not OperationCanceledException and not ObjectDisposedException)
+        {
+            bool disposedElsewhere;
+            lock (stateLock)
+            {
+                disposedElsewhere = disposed;
+            }
+
+            await DisposeAsync().ConfigureAwait(false);
+
+            if (disposedElsewhere)
+            {
+                throw new ObjectDisposedException(nameof(MicroGatePeer), exception);
+            }
+
+            throw;
+        }
         catch
         {
             await DisposeAsync().ConfigureAwait(false);
@@ -232,6 +249,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     public async ValueTask DisposeAsync()
     {
         IMicroGateDevice? opened;
+        bool fromCallback;
         lock (stateLock)
         {
             if (disposed)
@@ -241,35 +259,26 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
             disposed = true;
             opened = device;
+            fromCallback = notifyingThreadId == Environment.CurrentManagedThreadId;
         }
 
         if (opened is not null)
         {
-            bool onLoopThread = Environment.CurrentManagedThreadId == Volatile.Read(ref loopThreadId);
-
             if (Protocol(() => Machine.State) == HdlcConnectionState.Connected)
             {
-                await SendDisconnect(opened, onLoopThread).ConfigureAwait(false);
+                await SendDisconnect(opened).ConfigureAwait(false);
             }
 
             await lifetime.CancelAsync().ConfigureAwait(false);
             opened.DisableReceiver();
 
-            if (onLoopThread)
+            if (fromCallback)
             {
-                Volatile.Write(ref disposeOnLoopExit, true);
+                _ = CloseWhenStopped(opened);
             }
             else
             {
-                try
-                {
-                    await WaitForBackgroundTasks().WaitAsync(shutdownTimeout).ConfigureAwait(false);
-                }
-                catch (TimeoutException)
-                {
-                }
-
-                opened.Dispose();
+                await CloseWhenStopped(opened).ConfigureAwait(false);
             }
         }
 
@@ -278,14 +287,14 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
     private void ValidateOptions(MicroGatePeerOptions candidate)
     {
-        if (candidate.RetryInterval <= TimeSpan.Zero)
+        if (candidate.RetryInterval <= TimeSpan.Zero || candidate.RetryInterval > maxInterval)
         {
-            throw new ArgumentOutOfRangeException("options", "The retry interval must be greater than zero.");
+            throw new ArgumentOutOfRangeException("options", "The retry interval must be greater than zero and at most int.MaxValue milliseconds.");
         }
 
-        if (candidate.RetransmitInterval <= TimeSpan.Zero)
+        if (candidate.RetransmitInterval <= TimeSpan.Zero || candidate.RetransmitInterval > maxInterval)
         {
-            throw new ArgumentOutOfRangeException("options", "The retransmit interval must be greater than zero.");
+            throw new ArgumentOutOfRangeException("options", "The retransmit interval must be greater than zero and at most int.MaxValue milliseconds.");
         }
 
         if (candidate.MaxRetransmissions <= 0)
@@ -340,31 +349,32 @@ public sealed class MicroGatePeer : IMicroGatePeer
         }
     }
 
-    private async Task SendDisconnect(IMicroGateDevice opened, bool onLoopThread)
+    private async Task SendDisconnect(IMicroGateDevice opened)
     {
-        Task write = Task.Run(() => WriteFrame(() => Protocol(() => Machine.CreateDisconnect())));
-
         try
         {
-            if (onLoopThread)
-            {
-                if (!write.Wait(shutdownTimeout))
-                {
-                    opened.DisableTransmitter();
-                }
-            }
-            else
-            {
-                await write.WaitAsync(shutdownTimeout).ConfigureAwait(false);
-            }
+            await Task.Run(() => WriteFrame(() => Protocol(() => Machine.CreateDisconnect()))).WaitAsync(shutdownTimeout).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
             opened.DisableTransmitter();
         }
-        catch (Exception exception) when (exception is IOException or AggregateException)
+        catch (IOException)
         {
         }
+    }
+
+    private async Task CloseWhenStopped(IMicroGateDevice opened)
+    {
+        try
+        {
+            await WaitForBackgroundTasks().WaitAsync(shutdownTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+        }
+
+        opened.Dispose();
     }
 
     private void ValidateSize(int length)
@@ -468,7 +478,6 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
     private void ReceiveLoop()
     {
-        Volatile.Write(ref loopThreadId, Environment.CurrentManagedThreadId);
         Exception? failure = null;
 
         try
@@ -484,22 +493,8 @@ public sealed class MicroGatePeer : IMicroGatePeer
                     break;
                 }
 
-                HdlcReceiveResult result;
-                try
-                {
-                    result = Protocol(() =>
-                    {
-                        HdlcReceiveResult outcome = Machine.Receive(buffer.AsMemory(0, bytesRead));
-                        if (outcome.Acknowledged > 0)
-                        {
-                            unacknowledgedSince = Machine.OutstandingCount > 0 ? Stopwatch.GetTimestamp() : 0;
-                            retransmitAttempts = 0;
-                        }
-
-                        return outcome;
-                    });
-                }
-                catch (HdlcFrameException)
+                HdlcReceiveResult? result = Process(buffer.AsMemory(0, bytesRead));
+                if (result is null)
                 {
                     continue;
                 }
@@ -509,19 +504,16 @@ public sealed class MicroGatePeer : IMicroGatePeer
                     ReleaseSendSlots(result.Acknowledged);
                 }
 
-                if (result.Response is { } response)
+                if (result.Payload is { } payload && received.HasObservers)
                 {
-                    WriteFrame(() => response);
-                }
-
-                if (result.Retransmit)
-                {
-                    WriteFrames(CreateRetransmission);
-                }
-
-                if (result.Payload is { } payload && this.received.HasObservers)
-                {
-                    this.received.OnNext(payload.ToArray());
+                    byte[] copy = payload.ToArray();
+                    lock (stateLock)
+                    {
+                        if (!finished)
+                        {
+                            notifications.Enqueue(() => received.OnNext(copy));
+                        }
+                    }
                 }
 
                 if (result.State == HdlcConnectionState.Connected)
@@ -532,13 +524,14 @@ public sealed class MicroGatePeer : IMicroGatePeer
                         SetState(MicroGatePeerState.Connected);
                     }
 
-                    Notify();
                     connectionEstablished.TrySetResult();
                 }
                 else if (wasConnected)
                 {
                     break;
                 }
+
+                Notify();
             }
         }
         catch (Exception exception)
@@ -548,21 +541,47 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
         connectionEstablished.TrySetException(new IOException(failure is null ? "The device closed before a connection was established." : "The device failed.", failure));
         Finish();
+    }
 
-        if (Volatile.Read(ref disposeOnLoopExit))
+    private HdlcReceiveResult? Process(ReadOnlyMemory<byte> frame)
+    {
+        lock (writeLock)
         {
+            HdlcReceiveResult result;
             try
             {
-                retransmitTask.Wait(shutdownTimeout);
+                result = Protocol(() =>
+                {
+                    HdlcReceiveResult outcome = Machine.Receive(frame);
+                    if (outcome.Acknowledged > 0)
+                    {
+                        unacknowledgedSince = Machine.OutstandingCount > 0 ? Stopwatch.GetTimestamp() : 0;
+                        retransmitAttempts = 0;
+                    }
+
+                    return outcome;
+                });
             }
-            catch (AggregateException)
+            catch (HdlcFrameException)
             {
+                return null;
             }
 
-            device!.Dispose();
-        }
+            if (result.Response is { } response)
+            {
+                device!.Write(response);
+            }
 
-        Volatile.Write(ref loopThreadId, 0);
+            if (result.Retransmit)
+            {
+                foreach (ReadOnlyMemory<byte> retransmission in CreateRetransmission())
+                {
+                    device!.Write(retransmission);
+                }
+            }
+
+            return result;
+        }
     }
 
     private IReadOnlyList<ReadOnlyMemory<byte>> CreateRetransmission() =>
@@ -575,7 +594,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
         try
         {
-            using PeriodicTimer timer = new(TimeSpan.FromTicks(Math.Max(1, interval.Ticks / 2)));
+            using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(Math.Max(1, interval.TotalMilliseconds / 2)));
             while (await timer.WaitForNextTickAsync(lifetime.Token).ConfigureAwait(false))
             {
                 (bool resend, bool giveUp) = Protocol(() =>
@@ -733,13 +752,13 @@ public sealed class MicroGatePeer : IMicroGatePeer
             Action next;
             lock (stateLock)
             {
-                if (notifying || !notifications.TryDequeue(out Action? dequeued))
+                if (notifyingThreadId != 0 || !notifications.TryDequeue(out Action? dequeued))
                 {
                     return;
                 }
 
                 next = dequeued;
-                notifying = true;
+                notifyingThreadId = Environment.CurrentManagedThreadId;
             }
 
             try
@@ -750,7 +769,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
             {
                 lock (stateLock)
                 {
-                    notifying = false;
+                    notifyingThreadId = 0;
                 }
             }
         }

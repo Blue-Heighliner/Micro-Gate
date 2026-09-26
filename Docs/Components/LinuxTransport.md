@@ -4,7 +4,7 @@ Covers `LibC`, `LinuxNative`, `LinuxMicroGateDevice`, `SynclinkParams`, `Synclin
 
 ## P/Invoke surface
 
-`LibC` declares only the calls needed, with PascalCase managed names bound to the libc symbols through `EntryPoint`. `fcntl` has get and set overloads, and `ioctl` has three overloads (`ref int`, `ref SynclinkParams`, and a plain `nint`) matching how the driver interprets each request's argument. `LinuxNative` (behind `ILinuxNative`) turns those into semantic operations such as `EnableReceiver` and `SetParams`, choosing the request code and argument shape, and `LinuxMicroGateDevice` builds the frame transport on it: a write that is not fully accepted throws `IOException`, and each successful write is followed by `tcdrain` so the frame has left the device.
+`LibC` declares only the calls needed, with PascalCase managed names bound to the libc symbols through `EntryPoint`. `fcntl` has get and set overloads, and `ioctl` has three overloads (`ref int`, `ref SynclinkParams`, and a plain `nint`) matching how the driver interprets each request's argument; the request code itself is a `nuint`, because the C declaration takes an `unsigned long` and passing a 32-bit value would leave the upper half of the register unspecified. `LinuxNative` (behind `ILinuxNative`) turns those into semantic operations such as `EnableReceiver` and `SetParams`, choosing the request code and argument shape, and retries `read`, `write`, and `tcdrain` when a signal interrupts them (`EINTR`), reporting an interrupted `poll` as a timeout; without that, any signal delivered to the receive thread would look like a device failure and end the link, and `LinuxMicroGateDevice` builds the frame transport on it: a write that is not fully accepted throws `IOException`, and each successful write is followed by `tcdrain` so the frame has left the device.
 
 ## Native struct layout
 
@@ -12,7 +12,7 @@ Covers `LibC`, `LinuxNative`, `LinuxMicroGateDevice`, `SynclinkParams`, `Synclin
 
 ## Request codes
 
-`SynclinkConstants` holds the mode, encoding, CRC, and enable values (numerically identical to the Windows header's, since both SDKs share a driver lineage), the `N_HDLC` line discipline number, and the `fcntl` and file flag values. The `MGSL_IOC*` request codes are computed at class initialization by replicating the kernel's `_IO` and `_IOW` macros, with `Marshal.SizeOf<SynclinkParams>()` feeding the size field, so they cannot drift from the marshaled struct size. Values are `static readonly` rather than `const` so they are never baked into other assemblies.
+`SynclinkConstants` holds the HDLC mode, the disabled address filter, and the enable values (numerically identical to the Windows header's, since both SDKs share a driver lineage), the `N_HDLC` line discipline number, and the `open`, `fcntl`, and `poll` flag values. Encoding, CRC, and idle pattern values come straight from the public option enums, whose values match both headers. The `MGSL_IOC*` request codes are computed at class initialization by replicating the kernel's `_IO` and `_IOW` macros, with `Marshal.SizeOf<SynclinkParams>()` feeding the size field, so they cannot drift from the marshaled struct size. Values are `static readonly` rather than `const` so they are never baked into other assemblies.
 
 ## Port configuration
 

@@ -168,7 +168,7 @@ public sealed class HdlcStateMachineReliabilityTests
     }
 
     [Fact]
-    public void Receive_OutOfSequenceInformation_RejectsOnlyOnceUntilTheGapIsFilled()
+    public void Receive_OutOfSequenceInformation_RejectsOnceThenAcknowledgesUntilTheGapIsFilled()
     {
         (HdlcStateMachine local, _) = EstablishConnectedPair();
 
@@ -179,7 +179,9 @@ public sealed class HdlcStateMachineReliabilityTests
 
         Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(first.Response!.Value).Kind);
         Assert.Null(first.Payload);
-        Assert.Null(second.Response);
+        HdlcFrame secondAnswer = HdlcFrame.Parse(second.Response!.Value);
+        Assert.Equal(HdlcFrameKind.ReceiveReady, secondAnswer.Kind);
+        Assert.Equal(0, secondAnswer.ReceiveSequence);
         Assert.Null(second.Payload);
         Assert.Equal(new byte[] { 0 }, filled.Payload!.Value.ToArray());
         Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(again.Response!.Value).Kind);
@@ -293,6 +295,25 @@ public sealed class HdlcStateMachineReliabilityTests
             Assert.Equal(0, local.OutstandingCount);
             Assert.Equal(Enumerable.Range(0, local.WindowSize).Select(i => (byte)i), received.Select(result => result.Payload!.Value.ToArray()[0]));
         }
+    }
+
+    [Fact]
+    public void LostReject_TimerResendOfAlreadyDeliveredFrame_IsStillAcknowledged()
+    {
+        (HdlcStateMachine local, HdlcStateMachine remote) = EstablishConnectedPair();
+        ReadOnlyMemory<byte> information = local.CreateInformation(new byte[] { 1 });
+        remote.Receive(information);
+
+        HdlcReceiveResult firstRepeat = remote.Receive(local.CreateRetransmission()[0]);
+        HdlcReceiveResult secondRepeat = remote.Receive(local.CreateRetransmission()[0]);
+        HdlcReceiveResult acknowledged = local.Receive(secondRepeat.Response!.Value);
+
+        Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(firstRepeat.Response!.Value).Kind);
+        Assert.Null(firstRepeat.Payload);
+        Assert.Null(secondRepeat.Payload);
+        Assert.Equal(1, acknowledged.Acknowledged);
+        Assert.False(acknowledged.Retransmit);
+        Assert.Equal(0, local.OutstandingCount);
     }
 
     private sealed class ByteArrayComparer : IEqualityComparer<byte[]>

@@ -261,17 +261,13 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options) : IHdlcStat
 
         if (frame.SendSequence != receiveSequence)
         {
-            if (rejectSent)
-            {
-                return new HdlcReceiveResult { State = State, Acknowledged = acknowledged };
-            }
-
+            HdlcFrameKind answer = rejectSent ? HdlcFrameKind.ReceiveReady : HdlcFrameKind.Reject;
             rejectSent = true;
             return new HdlcReceiveResult
             {
                 State = State,
                 Acknowledged = acknowledged,
-                Response = CreateSupervisoryFrame(HdlcFrameKind.Reject, frame.PollFinal),
+                Response = CreateSupervisoryFrame(answer, frame.PollFinal),
             };
         }
 

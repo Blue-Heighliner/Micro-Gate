@@ -86,4 +86,15 @@ public sealed class WindowsMicroGateDeviceTests
         native.Verify(x => x.EnableTransmitter(9, false), Times.Once);
         native.Verify(x => x.CancelTransmit(9), Times.Once);
     }
+
+    [Fact]
+    public void Read_AfterTheReceiverIsDisabled_ReturnsZeroWithoutCallingTheDriver()
+    {
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.DisableReceiver();
+
+        Assert.Equal(0, device.Read(new byte[8]));
+        native.Verify(x => x.Read(It.IsAny<nint>(), It.IsAny<byte[]>()), Times.Never);
+    }
 }

@@ -29,11 +29,18 @@ internal sealed partial class MainWindow : Window
 
     private async Task RefreshPorts()
     {
-        IReadOnlyList<string> ports = await portSource.GetPorts();
-        PortComboBox.ItemsSource = ports;
-        if (ports.Count > 0)
+        try
         {
-            PortComboBox.SelectedIndex = 0;
+            IReadOnlyList<string> ports = await portSource.GetPorts();
+            PortComboBox.ItemsSource = ports;
+            if (ports.Count > 0)
+            {
+                PortComboBox.SelectedIndex = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Listing ports failed: {ex.Message}");
         }
     }
 

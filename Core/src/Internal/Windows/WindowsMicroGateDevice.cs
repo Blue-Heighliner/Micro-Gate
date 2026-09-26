@@ -1,14 +1,16 @@
 namespace BlueHeighliner.MicroGate.Windows;
 
 /// <summary>
-/// An <see cref="IMicroGateDevice"/> over an opened SyncLink device handle on Windows.
+/// An <see cref="IMicroGateDevice"/> over an opened SyncLink device handle on Windows. Once the receiver is disabled, reads return immediately instead of reaching the driver, so a read that starts after the cancellation cannot block.
 /// </summary>
 /// <param name="native">The native device operations.</param>
 /// <param name="handle">The opened and configured device handle, owned by the device from this point on.</param>
 internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle) : IMicroGateDevice
 {
+    private int receiverDisabled;
+
     /// <inheritdoc />
-    public int Read(byte[] buffer) => native.Read(handle, buffer);
+    public int Read(byte[] buffer) => Volatile.Read(ref receiverDisabled) == 0 ? native.Read(handle, buffer) : 0;
 
     /// <inheritdoc />
     public void Write(ReadOnlyMemory<byte> frame)
@@ -24,6 +26,7 @@ internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle)
     /// <inheritdoc />
     public void DisableReceiver()
     {
+        Volatile.Write(ref receiverDisabled, 1);
         native.EnableReceiver(handle, false);
         native.CancelReceive(handle);
     }

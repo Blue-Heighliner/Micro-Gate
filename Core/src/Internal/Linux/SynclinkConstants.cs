@@ -79,31 +79,31 @@ internal static class SynclinkConstants
     /// <summary>
     /// The <c>ioctl</c> request that sets the tty line discipline.
     /// </summary>
-    public static readonly int SetLineDiscipline = 0x5423;
+    public static readonly nuint SetLineDiscipline = 0x5423;
 
     /// <summary>
     /// The <c>MGSL_IOCSPARAMS</c> request that sets the port's <see cref="SynclinkParams"/>.
     /// </summary>
-    public static readonly int SetParams = Iow(0, Marshal.SizeOf<SynclinkParams>());
+    public static readonly nuint SetParams = Iow(0, Marshal.SizeOf<SynclinkParams>());
 
     /// <summary>
     /// The <c>MGSL_IOCSTXIDLE</c> request that sets the transmit idle pattern.
     /// </summary>
-    public static readonly int SetTransmitIdle = Io(2);
+    public static readonly nuint SetTransmitIdle = Io(2);
 
     /// <summary>
     /// The <c>MGSL_IOCTXENABLE</c> request that enables or disables the transmitter.
     /// </summary>
-    public static readonly int EnableTransmitter = Io(4);
+    public static readonly nuint EnableTransmitter = Io(4);
 
     /// <summary>
     /// The <c>MGSL_IOCRXENABLE</c> request that enables or disables the receiver.
     /// </summary>
-    public static readonly int EnableReceiver = Io(5);
+    public static readonly nuint EnableReceiver = Io(5);
 
-    private static int Io(int number) =>
-        (iocDirectionNone << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift);
+    private static nuint Io(int number) =>
+        (nuint)(uint)((iocDirectionNone << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift));
 
-    private static int Iow(int number, int size) =>
-        (iocDirectionWrite << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift) | (size << iocSizeShift);
+    private static nuint Iow(int number, int size) =>
+        (nuint)(uint)((iocDirectionWrite << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift) | (size << iocSizeShift));
 }
