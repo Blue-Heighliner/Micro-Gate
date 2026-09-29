@@ -1,6 +1,6 @@
 # API
 
-The public API is `IMicroGatePortSource` (discovery), `IMicroGatePeer` (one end of a link) with `IMicroGatePeerFactory` to create them, plus the `MicroGatePeerOptions` record that configures a peer. This document covers the *design and flow* of that surface (how the pieces fit together and the order things happen in) using public types only. It does not restate member-level detail already covered in the source itself.
+The public API is `IMicroGatePortSource` (discovery), `IMicroGatePeer` (one end of a link) with `IMicroGatePeerFactory` to create them, `IMicroGateMonitor` (passively observing a link) with `IMicroGateMonitorFactory` to create them, plus the `MicroGatePeerOptions` and `MicroGateMonitorOptions` records that configure them. This document covers the *design and flow* of that surface (how the pieces fit together and the order things happen in) using public types only. It does not restate member-level detail already covered in the source itself.
 
 ## Shape
 
@@ -48,3 +48,11 @@ Every observer of `Received` is handed the same `ReadOnlyMemory<byte>` for a fra
 ## Threading
 
 `Send` may be called from any thread; writes are serialized so frames never interleave with each other or with the peer's automatic protocol responses.
+
+## Monitoring
+
+`IMicroGateMonitor` observes a MicroGate device without joining the asynchronous balanced mode connection two other stations have formed on it: it opens the device, reports every frame it sees, and never sends one of its own. It shares `MicroGatePeer`'s shape (a factory, a no-argument constructor, `Start(portName, options, cancellation)`, `Received` and `StateChanged` as hot `IObservable<T>` streams, single use, `MicroGateMonitorState` moving `Idle` then `Monitoring` then `Stopped`) but not its machinery: there is no `HdlcStateMachine`, no address filtering by the ABM layer, no sequence numbers to track, and no `Send` method at all, since a monitor has nothing to send. `MicroGateMonitorOptions` covers only what decoding needs (`Encoding`, `Crc`, `HardwareAddressFilter`), with no HDLC-layer settings, since a monitor never forms a connection for them to apply to.
+
+`Received` is `IObservable<MicroGateFrame>`, one item per frame read from the device, decoded as far as its bytes allow. `MicroGateFrame.Kind` is `MicroGateFrameKind`, covering the same nine frame kinds `MicroGatePeer` handles internally, including the unnumbered and supervisory frames (SABM, DISC, UA, DM, FRMR, RR, RNR, REJ) two other stations use to manage their own connection, not just their information frames; a tenth kind, `Malformed`, covers a frame whose bytes could not be decoded, still reported (with `Raw` and `ErrorMessage`) rather than silently dropped, since visibility into everything on the wire is the point of a monitoring tool. `MicroGateFrame.Raw` always holds the complete bytes as received; `Payload`, `SendSequence`, and `ReceiveSequence` are populated only for the kinds that carry them.
+
+A monitor never writes to the device. Nothing in `IMicroGateMonitor` could cause it to: there is no `Send` method, and the device it opens is configured with its transmitter left disabled, at the same layer that opens the device, so this holds regardless of how the monitor is used.

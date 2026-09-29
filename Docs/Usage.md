@@ -1,6 +1,6 @@
 # Usage
 
-Runnable examples of `MicroGatePortSource` and `MicroGatePeer` in different situations. `Received` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
+Runnable examples of `MicroGatePortSource`, `MicroGatePeer`, and `MicroGateMonitor` in different situations. `Received` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
 
 ## List the available ports
 
@@ -141,3 +141,34 @@ services.AddSingleton<IMicroGatePeerFactory, MicroGatePeerFactory>();
 ```
 
 A peer can be started only once, so a service that needs links takes the `IMicroGatePeerFactory` and calls `Create` for each one, disposing each peer when done. Registering `IMicroGatePeer` itself is possible, but only as transient, and a container then tracks every peer it resolves until the container is disposed.
+
+## Monitor a device without joining its connection
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+await using IMicroGateMonitor monitor = new MicroGateMonitorFactory().Create();
+
+monitor.Received.Subscribe(frame => Console.WriteLine($"{frame.Kind} from 0x{frame.Address:X2}, {frame.Raw.Length} bytes"));
+
+await monitor.Start("ttySLG0");
+```
+
+`monitor` never writes to the device: it reports every frame it sees, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their information frames. Options are the same physical layer settings as a peer's (`Encoding`, `Crc`, `HardwareAddressFilter`); there is nothing HDLC-layer to configure, since a monitor never forms a connection.
+
+## Handle a frame the monitor could not decode
+
+```csharp
+monitor.Received.Subscribe(frame =>
+{
+    if (frame.Kind == MicroGateFrameKind.Malformed)
+    {
+        Console.WriteLine($"Could not decode {frame.Raw.Length} bytes: {frame.ErrorMessage}");
+        return;
+    }
+
+    Console.WriteLine($"{frame.Kind}: {frame.Payload.Length} byte payload");
+});
+```
+
+A frame that is too short, or whose control byte does not match a recognized kind, is still reported rather than dropped, with `Raw` holding its bytes as received.

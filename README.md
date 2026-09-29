@@ -39,8 +39,12 @@ await peer.Send("Hello"u8.ToArray());
 | [`Docs/Architecture.md`](Docs/Architecture.md) | High-level design decisions. |
 | [`Docs/Project.md`](Docs/Project.md) | This repository's scripts, publishing, and CI. |
 | [`Docs/MicroGate/`](Docs/MicroGate) | The vendor serial API documentation and driver headers (`synclink.h`, `Mghdlc.h`) for Linux and Windows that the native layers are written against. |
-| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, peer lifecycle, Linux and Windows transports). |
+| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, peer lifecycle, monitor lifecycle, Linux and Windows transports). |
 
 ## Sample
 
 `Sample/` is an Avalonia desktop application demonstrating the library: enumerate ports, connect, and send and receive messages. Run it with `dotnet run --project Sample`.
+
+## Monitor
+
+`Monitor/` is an Avalonia desktop application that passively observes a MicroGate device: pick a port and watch every frame on it, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their data. It never writes to the device. The recorded log can be saved to a file and reloaded later. Run it with `dotnet run --project Monitor`, or publish it as a single self-contained executable (see [`Docs/Project.md`](Docs/Project.md)).

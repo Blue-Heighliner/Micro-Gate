@@ -1,0 +1,81 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="using:BlueHeighliner.MicroGate"
+        mc:Ignorable="d" d:DesignWidth="1040" d:DesignHeight="760"
+        x:Class="BlueHeighliner.MicroGate.MainWindow"
+        Title="MicroGate Monitor"
+        Width="1040" Height="760"
+        Background="{StaticResource EditorBackgroundBrush}">
+    <Grid RowDefinitions="*,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="280,Auto,*">
+            <!-- Sidebar, playing the role of VS Code's Explorer/settings sidebar -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource SidebarBackgroundBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16" Spacing="6">
+                        <TextBlock Text="PORT" Classes="section-header" />
+                        <ComboBox x:Name="PortComboBox" HorizontalAlignment="Stretch" Margin="0,4,0,0" />
+                        <Button x:Name="RefreshButton" Content="Refresh Ports" HorizontalAlignment="Stretch" Click="RefreshPorts_Click" Margin="0,6,0,0" />
+                        <Button x:Name="StartButton" Content="Start Monitoring" Classes="accent" HorizontalAlignment="Stretch" Click="StartStop_Click" Margin="0,6,0,0" />
+
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
+
+                        <TextBlock Text="SETTINGS" Classes="section-header" />
+                        <TextBlock Text="Encoding" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="EncodingComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="CRC" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="CrcComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Address filter (hex, optional)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="AddressFilterTextBox" />
+
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
+
+                        <TextBlock Text="LOG" Classes="section-header" />
+                        <Button x:Name="SaveButton" Content="Save Log..." HorizontalAlignment="Stretch" Click="SaveLog_Click" Margin="0,4,0,0" />
+                        <Button x:Name="LoadButton" Content="Load Log..." HorizontalAlignment="Stretch" Click="LoadLog_Click" Margin="0,6,0,0" />
+                        <Button x:Name="ClearButton" Content="Clear Log" HorizontalAlignment="Stretch" Click="ClearLog_Click" Margin="0,6,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+            <!-- Main content, playing the role of VS Code's editor: the frame log. Selecting a frame
+                 row expands its byte detail inline, directly underneath it. -->
+            <ListBox x:Name="FrameListBox"
+                     Grid.Column="2"
+                     Background="{StaticResource EditorBackgroundBrush}"
+                     BorderThickness="0"
+                     FontFamily="Cascadia Code,Consolas,Menlo,monospace"
+                     FontSize="12"
+                     Padding="8"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     SelectionChanged="FrameListBox_SelectionChanged">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="local:FrameLogEntry">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Text}" />
+                            <SelectableTextBlock Text="{Binding Detail}"
+                                                  IsVisible="{Binding IsExpanded}"
+                                                  Foreground="{StaticResource ForegroundBrush}"
+                                                  Margin="0,8,0,8" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <!-- Status bar, playing the role of VS Code's blue status bar -->
+        <Border Grid.Row="1" Background="{StaticResource StatusBarBackgroundBrush}" Padding="12,4">
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <TextBlock x:Name="StatusText" Text="Idle" Foreground="White" FontSize="12" VerticalAlignment="Center" />
+                <TextBlock x:Name="FrameCountText" Text="0 frames" Foreground="White" FontSize="12" VerticalAlignment="Center" Opacity="0.85" />
+                <TextBlock x:Name="PortStatusText" Text="No active port" Foreground="White" FontSize="12" VerticalAlignment="Center" Opacity="0.85" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

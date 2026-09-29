@@ -1,0 +1,2 @@
+script Run Monitor
+    run dotnet run --project Monitor/Monitor.csproj
