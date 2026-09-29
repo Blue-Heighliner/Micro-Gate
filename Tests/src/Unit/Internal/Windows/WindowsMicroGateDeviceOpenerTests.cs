@@ -27,14 +27,34 @@ public sealed class WindowsMicroGateDeviceOpenerTests
             Encoding = MicroGateEncoding.BiphaseMark,
             Crc = MicroGateCrc.None,
             IdlePattern = MicroGateIdlePattern.Mark,
-            HardwareAddressFilter = 0x05,
+            Loopback = true,
+            ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
+            TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
+            PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+            UnderrunAction = MicroGateUnderrunAction.Flag,
+            ClockSpeed = 9600,
+            PreambleLength = MicroGatePreambleLength.Bits32,
+            PreamblePattern = MicroGatePreamblePattern.Ones,
         };
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
         IMicroGateDevice device = opener.Open("COM1", options);
         device.Dispose();
 
-        native.Verify(x => x.SetParams(9, It.Is<MghdlcParams>(p => p.Mode == MghdlcConstants.ModeHdlc && p.Encoding == 4 && p.CrcType == 0 && p.Addr == 0x05)), Times.Once);
+        native.Verify(
+            x => x.SetParams(
+                9,
+                It.Is<MghdlcParams>(p =>
+                    p.Mode == MghdlcConstants.ModeHdlc
+                    && p.Loopback == 1
+                    && p.Flags == (0x200 | 0x400 | 0x2000 | 0x0002)
+                    && p.Encoding == 4
+                    && p.ClockSpeed == 9600
+                    && p.CrcType == 0
+                    && p.Addr == 0xFF
+                    && p.PreambleLength == 2
+                    && p.PreamblePattern == 5)),
+            Times.Once);
         native.Verify(x => x.SetIdleMode(9, 6u), Times.Once);
         native.Verify(x => x.EnableReceiver(9, true), Times.Once);
         native.Verify(x => x.EnableTransmitter(9, true), Times.Once);
@@ -42,13 +62,25 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     }
 
     [Fact]
-    public void Open_WithDefaultOptions_DisablesHardwareAddressFilter()
+    public void Open_WithDefaultOptions_AppliesPhysicalDefaultsAndDisablesHardwareAddressFilter()
     {
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
         opener.Open("COM1", new MicroGatePeerOptions());
 
-        native.Verify(x => x.SetParams(9, It.Is<MghdlcParams>(p => p.Encoding == 0 && p.CrcType == 1 && p.Addr == 0xFF)), Times.Once);
+        native.Verify(
+            x => x.SetParams(
+                9,
+                It.Is<MghdlcParams>(p =>
+                    p.Loopback == 0
+                    && p.Flags == 0
+                    && p.Encoding == 0
+                    && p.ClockSpeed == 4800
+                    && p.CrcType == 2
+                    && p.Addr == 0xFF
+                    && p.PreambleLength == 0
+                    && p.PreamblePattern == 0)),
+            Times.Once);
         native.Verify(x => x.SetIdleMode(9, 0u), Times.Once);
     }
 

@@ -37,8 +37,8 @@ internal sealed class WindowsMicroGateMonitorDeviceOpener(IWindowsNative native)
         MghdlcParams parameters = new()
         {
             Mode = MghdlcConstants.ModeHdlc,
-            Encoding = (byte)options.Encoding,
-            CrcType = (ushort)options.Crc,
+            Encoding = MapEncoding(options.Encoding),
+            CrcType = MapCrc(options.Crc),
             Addr = options.HardwareAddressFilter ?? MghdlcConstants.AddressFilterDisabled,
         };
         Check(native.SetParams(handle, parameters), "set the port parameters");
@@ -52,4 +52,25 @@ internal sealed class WindowsMicroGateMonitorDeviceOpener(IWindowsNative native)
             throw new IOException($"Failed to {step}.", new Win32Exception((int)status));
         }
     }
+
+    private byte MapEncoding(MicroGateEncoding value) => value switch
+    {
+        MicroGateEncoding.Nrz => 0,
+        MicroGateEncoding.Nrzb => 1,
+        MicroGateEncoding.NrziMark => 2,
+        MicroGateEncoding.NrziSpace => 3,
+        MicroGateEncoding.BiphaseMark => 4,
+        MicroGateEncoding.BiphaseSpace => 5,
+        MicroGateEncoding.BiphaseLevel => 6,
+        MicroGateEncoding.DifferentialBiphaseLevel => 7,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapCrc(MicroGateCrc value) => value switch
+    {
+        MicroGateCrc.None => 0,
+        MicroGateCrc.Crc16Ccitt => 1,
+        MicroGateCrc.Crc32Ccitt => 2,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 }

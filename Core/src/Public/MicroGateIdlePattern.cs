@@ -8,35 +8,35 @@ public enum MicroGateIdlePattern
     /// <summary>
     /// Repeated HDLC flag bytes (0x7E).
     /// </summary>
-    Flags = 0,
+    Flags,
 
     /// <summary>
     /// Alternating zeros and ones.
     /// </summary>
-    AlternatingZerosOnes = 1,
+    AlternatingZerosOnes,
 
     /// <summary>
     /// Continuous zeros.
     /// </summary>
-    Zeros = 2,
+    Zeros,
 
     /// <summary>
     /// Continuous ones.
     /// </summary>
-    Ones = 3,
+    Ones,
 
     /// <summary>
     /// Alternating mark and space.
     /// </summary>
-    AlternatingMarkSpace = 4,
+    AlternatingMarkSpace,
 
     /// <summary>
     /// Continuous space.
     /// </summary>
-    Space = 5,
+    Space,
 
     /// <summary>
     /// Continuous mark.
     /// </summary>
-    Mark = 6,
+    Mark,
 }

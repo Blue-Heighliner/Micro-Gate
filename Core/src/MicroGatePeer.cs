@@ -29,7 +29,7 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     bool IsConnected { get; }
 
     /// <summary>
-    /// Gets the largest payload, in bytes, that can be sent in one frame. The MicroGate drivers discard received frames larger than 4096 bytes, and the frame also carries an address, a control field, and a frame check sequence.
+    /// Gets the largest payload, in bytes, that can be sent in one frame. Reflects <see cref="MicroGatePeerOptions.MaxInfoField"/> from the most recent <see cref="Start"/>, or its default before the peer has been started.
     /// </summary>
     int MaxPayloadSize { get; }
 
@@ -40,7 +40,7 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// <param name="options">The device and HDLC settings to apply, or <see langword="null"/> to use the defaults.</param>
     /// <param name="cancellation">A token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Connected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/> or <see cref="MicroGatePeerOptions.RetransmitInterval"/> is zero, negative, or longer than <see cref="int.MaxValue"/> milliseconds, or <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/> or <see cref="MicroGatePeerOptions.RetransmitInterval"/> is zero, negative, or longer than <see cref="int.MaxValue"/> milliseconds, <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative, <see cref="MicroGatePeerOptions.TransmitWindow"/> is outside 1 to 7, <see cref="MicroGatePeerOptions.MaxInfoField"/> is outside 1 to 4090, or <see cref="MicroGatePeerOptions.ClockSpeed"/> is zero or negative.</exception>
     /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     /// <exception cref="InvalidOperationException">The peer has already been started or has been disposed.</exception>
     /// <exception cref="IOException">The device could not be opened, or it closed before a connection was established.</exception>
@@ -115,6 +115,8 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private readonly CancellationTokenSource lifetime = new();
     private readonly TaskCompletionSource connectionEstablished = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly int maxFrameSize = 65535;
+    private readonly int maxTransmitWindow = 7;
+    private readonly int maxInfoField = 4090;
     private readonly TimeSpan maxInterval = TimeSpan.FromMilliseconds(int.MaxValue);
     private MicroGatePeerOptions options = new();
     private IHdlcStateMachine? stateMachine;
@@ -151,7 +153,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     public bool IsConnected => State == MicroGatePeerState.Connected;
 
     /// <inheritdoc />
-    public int MaxPayloadSize { get; } = 4090;
+    public int MaxPayloadSize => options.MaxInfoField;
 
     private IHdlcStateMachine Machine => stateMachine ?? throw new InvalidOperationException("The peer has not been started.");
 
@@ -300,6 +302,21 @@ public sealed class MicroGatePeer : IMicroGatePeer
         if (candidate.MaxRetransmissions <= 0)
         {
             throw new ArgumentOutOfRangeException("options", "The maximum number of retransmissions must be greater than zero.");
+        }
+
+        if (candidate.TransmitWindow < 1 || candidate.TransmitWindow > maxTransmitWindow)
+        {
+            throw new ArgumentOutOfRangeException("options", $"The transmit window must be between 1 and {maxTransmitWindow}.");
+        }
+
+        if (candidate.MaxInfoField < 1 || candidate.MaxInfoField > maxInfoField)
+        {
+            throw new ArgumentOutOfRangeException("options", $"The maximum info field size must be between 1 and {maxInfoField} bytes.");
+        }
+
+        if (candidate.ClockSpeed <= 0)
+        {
+            throw new ArgumentOutOfRangeException("options", "The clock speed must be greater than zero.");
         }
     }
 

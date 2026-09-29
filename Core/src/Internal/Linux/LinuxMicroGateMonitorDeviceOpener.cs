@@ -42,8 +42,8 @@ internal sealed class LinuxMicroGateMonitorDeviceOpener(ILinuxNative native) : I
         SynclinkParams parameters = new()
         {
             Mode = SynclinkConstants.ModeHdlc,
-            Encoding = (byte)options.Encoding,
-            CrcType = (ushort)options.Crc,
+            Encoding = MapEncoding(options.Encoding),
+            CrcType = MapCrc(options.Crc),
             AddressFilter = options.HardwareAddressFilter ?? SynclinkConstants.AddressFilterDisabled,
         };
         Check(native.SetParams(fileDescriptor, parameters), "set the port parameters", path);
@@ -58,4 +58,25 @@ internal sealed class LinuxMicroGateMonitorDeviceOpener(ILinuxNative native) : I
             throw new IOException($"Failed to {step} on '{path}'; it may not be a SyncLink device.", new Win32Exception(Marshal.GetLastPInvokeError()));
         }
     }
+
+    private byte MapEncoding(MicroGateEncoding value) => value switch
+    {
+        MicroGateEncoding.Nrz => 0,
+        MicroGateEncoding.Nrzb => 1,
+        MicroGateEncoding.NrziMark => 2,
+        MicroGateEncoding.NrziSpace => 3,
+        MicroGateEncoding.BiphaseMark => 4,
+        MicroGateEncoding.BiphaseSpace => 5,
+        MicroGateEncoding.BiphaseLevel => 6,
+        MicroGateEncoding.DifferentialBiphaseLevel => 7,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapCrc(MicroGateCrc value) => value switch
+    {
+        MicroGateCrc.None => 0,
+        MicroGateCrc.Crc16Ccitt => 1,
+        MicroGateCrc.Crc32Ccitt => 2,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 }

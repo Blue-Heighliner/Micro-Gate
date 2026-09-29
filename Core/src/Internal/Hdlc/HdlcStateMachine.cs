@@ -81,7 +81,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options) : IHdlcStat
     public HdlcConnectionState State { get; private set; } = HdlcConnectionState.Disconnected;
 
     /// <inheritdoc />
-    public int WindowSize => sequenceModulus - 1;
+    public int WindowSize => options.TransmitWindow;
 
     /// <inheritdoc />
     public int OutstandingCount => outstanding.Count;

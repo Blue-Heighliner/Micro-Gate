@@ -34,12 +34,17 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMic
         MghdlcParams parameters = new()
         {
             Mode = MghdlcConstants.ModeHdlc,
-            Encoding = (byte)options.Encoding,
-            CrcType = (ushort)options.Crc,
-            Addr = options.HardwareAddressFilter ?? MghdlcConstants.AddressFilterDisabled,
+            Loopback = (byte)(options.Loopback ? 1 : 0),
+            Flags = MapFlags(options),
+            Encoding = MapEncoding(options.Encoding),
+            ClockSpeed = (uint)options.ClockSpeed,
+            CrcType = MapCrc(options.Crc),
+            Addr = MghdlcConstants.AddressFilterDisabled,
+            PreambleLength = MapPreambleLength(options.PreambleLength),
+            PreamblePattern = MapPreamblePattern(options.PreamblePattern),
         };
         Check(native.SetParams(handle, parameters), "set the port parameters");
-        Check(native.SetIdleMode(handle, (uint)options.IdlePattern), "set the idle pattern");
+        Check(native.SetIdleMode(handle, MapIdlePattern(options.IdlePattern)), "set the idle pattern");
         Check(native.EnableReceiver(handle, true), "enable the receiver");
         Check(native.EnableTransmitter(handle, true), "enable the transmitter");
     }
@@ -51,4 +56,95 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMic
             throw new IOException($"Failed to {step}.", new Win32Exception((int)status));
         }
     }
+
+    private ushort MapFlags(MicroGatePeerOptions options) =>
+        (ushort)(MapReceiveClockSource(options.ReceiveClockSource) | MapTransmitClockSource(options.TransmitClockSource) | MapPhaseLockedLoopDivisor(options.PhaseLockedLoopDivisor) | MapUnderrunAction(options.UnderrunAction));
+
+    private ushort MapReceiveClockSource(MicroGateReceiveClockSource value) => value switch
+    {
+        MicroGateReceiveClockSource.OwnPin => 0,
+        MicroGateReceiveClockSource.OtherPin => MghdlcConstants.ReceiveClockOtherPin,
+        MicroGateReceiveClockSource.PhaseLockedLoop => MghdlcConstants.ReceiveClockDpll,
+        MicroGateReceiveClockSource.BaudRateGenerator => MghdlcConstants.ReceiveClockBrg,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapTransmitClockSource(MicroGateTransmitClockSource value) => value switch
+    {
+        MicroGateTransmitClockSource.OwnPin => 0,
+        MicroGateTransmitClockSource.OtherPin => MghdlcConstants.TransmitClockOtherPin,
+        MicroGateTransmitClockSource.PhaseLockedLoop => MghdlcConstants.TransmitClockDpll,
+        MicroGateTransmitClockSource.BaudRateGenerator => MghdlcConstants.TransmitClockBrg,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapPhaseLockedLoopDivisor(MicroGatePhaseLockedLoopDivisor value) => value switch
+    {
+        MicroGatePhaseLockedLoopDivisor.DivideBy32 => 0,
+        MicroGatePhaseLockedLoopDivisor.DivideBy8 => MghdlcConstants.DpllDivisor8,
+        MicroGatePhaseLockedLoopDivisor.DivideBy16 => MghdlcConstants.DpllDivisor16,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapUnderrunAction(MicroGateUnderrunAction value) => value switch
+    {
+        MicroGateUnderrunAction.Abort7 => 0,
+        MicroGateUnderrunAction.Abort15 => MghdlcConstants.UnderrunAbort15,
+        MicroGateUnderrunAction.Flag => MghdlcConstants.UnderrunFlag,
+        MicroGateUnderrunAction.InvalidFrameCheckSequence => MghdlcConstants.UnderrunBadCrc,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private byte MapEncoding(MicroGateEncoding value) => value switch
+    {
+        MicroGateEncoding.Nrz => 0,
+        MicroGateEncoding.Nrzb => 1,
+        MicroGateEncoding.NrziMark => 2,
+        MicroGateEncoding.NrziSpace => 3,
+        MicroGateEncoding.BiphaseMark => 4,
+        MicroGateEncoding.BiphaseSpace => 5,
+        MicroGateEncoding.BiphaseLevel => 6,
+        MicroGateEncoding.DifferentialBiphaseLevel => 7,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapCrc(MicroGateCrc value) => value switch
+    {
+        MicroGateCrc.None => 0,
+        MicroGateCrc.Crc16Ccitt => 1,
+        MicroGateCrc.Crc32Ccitt => 2,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private uint MapIdlePattern(MicroGateIdlePattern value) => value switch
+    {
+        MicroGateIdlePattern.Flags => 0,
+        MicroGateIdlePattern.AlternatingZerosOnes => 1,
+        MicroGateIdlePattern.Zeros => 2,
+        MicroGateIdlePattern.Ones => 3,
+        MicroGateIdlePattern.AlternatingMarkSpace => 4,
+        MicroGateIdlePattern.Space => 5,
+        MicroGateIdlePattern.Mark => 6,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private byte MapPreambleLength(MicroGatePreambleLength value) => value switch
+    {
+        MicroGatePreambleLength.Bits8 => 0,
+        MicroGatePreambleLength.Bits16 => 1,
+        MicroGatePreambleLength.Bits32 => 2,
+        MicroGatePreambleLength.Bits64 => 3,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private byte MapPreamblePattern(MicroGatePreamblePattern value) => value switch
+    {
+        MicroGatePreamblePattern.None => 0,
+        MicroGatePreamblePattern.Zeros => 1,
+        MicroGatePreamblePattern.Flags => 2,
+        MicroGatePreamblePattern.Alternating10 => 3,
+        MicroGatePreamblePattern.Alternating01 => 4,
+        MicroGatePreamblePattern.Ones => 5,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 }

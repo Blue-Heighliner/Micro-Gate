@@ -79,13 +79,19 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     [Fact]
     public async Task Send_LargePayload_ArrivesIntact()
     {
+        (SocketMicroGateDevice firstSocket, SocketMicroGateDevice secondSocket) = await SocketMicroGateDevice.CreatePair();
+        await using MicroGatePeer large = Create(firstSocket);
+        await using MicroGatePeer largeSecond = Create(secondSocket);
+        MicroGatePeerOptions withMaxInfoField = requesting with { MaxInfoField = 4090 };
         PayloadObserver atSecond = new();
-        second.Received.Subscribe(atSecond);
-        await ConnectBoth();
+        largeSecond.Received.Subscribe(atSecond);
+        Task listening = largeSecond.Start("second", passive with { MaxInfoField = 4090 }).AsTask();
+        await large.Start("first", withMaxInfoField).AsTask().WaitAsync(timeout);
+        await listening.WaitAsync(timeout);
         byte[] payload = new byte[4090];
         new Random(1).NextBytes(payload);
 
-        await first.Send(payload);
+        await large.Send(payload);
 
         Assert.Equal(payload, await atSecond.Next());
     }

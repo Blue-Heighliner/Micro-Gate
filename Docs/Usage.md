@@ -27,7 +27,7 @@ await peer.Start("ttySLG0");
 await peer.Send("Hello"u8.ToArray());
 ```
 
-With no options the default settings apply: NRZ encoding, CRC-16-CCITT, flag idle, and HDLC address `0xFF`, which the remote peer must also use.
+With no options the default settings apply: NRZ encoding, CRC-32-CCITT, flag idle, and HDLC address `0xFF`, which the remote peer must also use.
 
 ## Subscribe before connecting
 
@@ -85,7 +85,7 @@ byte[] message = new byte[peer.MaxPayloadSize];
 await peer.Send(message);
 ```
 
-Sent data is kept until the remote peer acknowledges it and is sent again if the remote peer rejects a gap or nothing is acknowledged within the interval. Use a `null` interval to resend only on rejection. A payload can be at most `MaxPayloadSize` bytes, and up to 7 sends can be unacknowledged before the next one waits.
+Sent data is kept until the remote peer acknowledges it and is sent again if the remote peer rejects a gap or nothing is acknowledged within the interval. Use a `null` interval to resend only on rejection. A payload can be at most `MaxPayloadSize` bytes (`MaxInfoField` in the options, 1500 by default), and up to `TransmitWindow` sends (1 by default, up to 7) can be unacknowledged before the next one waits.
 
 ## React to a disconnect
 
@@ -97,18 +97,18 @@ peer.StateChanged.Subscribe(
 
 `StateChanged` completes when the peer becomes `Disconnected`, whether the remote peer disconnected, the device was lost, or the peer was disposed.
 
-## Always zero poll/final bit
+## Enable the poll/final bit
 
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { Address = 0x01, DisablePollFinalBit = true };
+MicroGatePeerOptions options = new() { Address = 0x01, DisablePollFinalBit = false };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 await peer.Start("ttySLG0", options);
 ```
 
-With `DisablePollFinalBit`, every frame the station sends has the poll/final bit at 0, including acknowledgements to a peer frame that had it set.
+`DisablePollFinalBit` is `true` by default, so every frame the station sends has the poll/final bit at 0, including acknowledgements to a peer frame that had it set. Set it to `false` for a remote peer that expects the bit to reflect the frame's actual role.
 
 ## Configure the device
 
@@ -118,9 +118,8 @@ using BlueHeighliner.MicroGate;
 MicroGatePeerOptions options = new()
 {
     Encoding = MicroGateEncoding.NrziSpace,
-    Crc = MicroGateCrc.Crc32Ccitt,
+    Crc = MicroGateCrc.Crc16Ccitt,
     IdlePattern = MicroGateIdlePattern.Flags,
-    HardwareAddressFilter = 0x01,
 };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();

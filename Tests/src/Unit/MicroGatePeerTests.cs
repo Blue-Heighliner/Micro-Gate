@@ -445,12 +445,23 @@ public sealed class MicroGatePeerTests : IDisposable
 
         Assert.Equal(new MicroGatePeerOptions(), captured);
         Assert.Equal(TimeSpan.FromSeconds(1), captured!.RetryInterval);
-        Assert.False(captured.DisablePollFinalBit);
+        Assert.Equal(TimeSpan.FromSeconds(1), captured.RetransmitInterval);
+        Assert.Equal(21, captured.MaxRetransmissions);
+        Assert.True(captured.DisablePollFinalBit);
+        Assert.Equal(7, captured.TransmitWindow);
+        Assert.Equal(1500, captured.MaxInfoField);
         Assert.Equal(MicroGateEncoding.Nrz, captured.Encoding);
-        Assert.Equal(MicroGateCrc.Crc16Ccitt, captured.Crc);
+        Assert.Equal(MicroGateCrc.Crc32Ccitt, captured.Crc);
         Assert.Equal(MicroGateIdlePattern.Flags, captured.IdlePattern);
-        Assert.Null(captured.HardwareAddressFilter);
         Assert.Equal(0xFF, captured.Address);
+        Assert.False(captured.Loopback);
+        Assert.Equal(MicroGateReceiveClockSource.OwnPin, captured.ReceiveClockSource);
+        Assert.Equal(MicroGateTransmitClockSource.OwnPin, captured.TransmitClockSource);
+        Assert.Equal(MicroGatePhaseLockedLoopDivisor.DivideBy32, captured.PhaseLockedLoopDivisor);
+        Assert.Equal(MicroGateUnderrunAction.Abort7, captured.UnderrunAction);
+        Assert.Equal(4800, captured.ClockSpeed);
+        Assert.Equal(MicroGatePreambleLength.Bits8, captured.PreambleLength);
+        Assert.Equal(MicroGatePreamblePattern.None, captured.PreamblePattern);
     }
 
     [Theory]
@@ -800,7 +811,7 @@ public sealed class MicroGatePeerTests : IDisposable
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Send(owner.Object));
 
         owner.Verify(x => x.Dispose(), Times.Once);
-        Assert.Equal(4090, peer.MaxPayloadSize);
+        Assert.Equal(1500, peer.MaxPayloadSize);
     }
 
     [Fact]
@@ -875,6 +886,42 @@ public sealed class MicroGatePeerTests : IDisposable
         await using MicroGatePeer peer = harness.CreatePeer();
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { MaxRetransmissions = 0 }));
+
+        Assert.Equal(MicroGatePeerState.Idle, peer.State);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8)]
+    public async Task Start_WithTransmitWindowOutsideValidRange_ThrowsAndStaysIdle(int window)
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { TransmitWindow = window }));
+
+        Assert.Equal(MicroGatePeerState.Idle, peer.State);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4091)]
+    public async Task Start_WithMaxInfoFieldOutsideValidRange_ThrowsAndStaysIdle(int maxInfoField)
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { MaxInfoField = maxInfoField }));
+
+        Assert.Equal(MicroGatePeerState.Idle, peer.State);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task Start_WithNonPositiveClockSpeed_ThrowsAndStaysIdle(int clockSpeed)
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { ClockSpeed = clockSpeed }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }

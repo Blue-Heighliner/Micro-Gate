@@ -33,11 +33,11 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, new MicroGatePeerOptions { Address = 0x05 }));
 
-        Assert.Equal(new byte[] { 0x05, 0x3F }, await File.ReadAllBytesAsync(file));
+        Assert.Equal(new byte[] { 0x05, 0x2F }, await File.ReadAllBytesAsync(file));
     }
 
     [Fact]
-    public async Task Start_WithPollFinalDisabled_SendsSabmWithoutPollBit()
+    public async Task Start_WithPollFinalEnabled_SendsSabmWithPollBit()
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -46,9 +46,9 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         IMicroGatePeer peer = CreateTolerantPeer();
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, new MicroGatePeerOptions { Address = 0x05, DisablePollFinalBit = true }));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, new MicroGatePeerOptions { Address = 0x05, DisablePollFinalBit = false }));
 
-        Assert.Equal(new byte[] { 0x05, 0x2F }, await File.ReadAllBytesAsync(file));
+        Assert.Equal(new byte[] { 0x05, 0x3F }, await File.ReadAllBytesAsync(file));
     }
 
     [Fact]

@@ -37,6 +37,61 @@ internal static class SynclinkConstants
     public static readonly int Disabled = 0;
 
     /// <summary>
+    /// The <c>HDLC_FLAG_RXC_TXCPIN</c> bit of <see cref="SynclinkParams.Flags"/>: the receive clock comes from the transmit clock (TXC) pin.
+    /// </summary>
+    public static readonly ushort ReceiveClockOtherPin = 0x8000;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_RXC_DPLL</c> bit of <see cref="SynclinkParams.Flags"/>: the receive clock comes from the digital phase locked loop.
+    /// </summary>
+    public static readonly ushort ReceiveClockDpll = 0x0100;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_RXC_BRG</c> bit of <see cref="SynclinkParams.Flags"/>: the receive clock comes from the internal baud rate generator.
+    /// </summary>
+    public static readonly ushort ReceiveClockBrg = 0x0200;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_TXC_RXCPIN</c> bit of <see cref="SynclinkParams.Flags"/>: the transmit clock comes from the receive clock (RXC) pin.
+    /// </summary>
+    public static readonly ushort TransmitClockOtherPin = 0x0008;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_TXC_DPLL</c> bit of <see cref="SynclinkParams.Flags"/>: the transmit clock comes from the digital phase locked loop.
+    /// </summary>
+    public static readonly ushort TransmitClockDpll = 0x0400;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_TXC_BRG</c> bit of <see cref="SynclinkParams.Flags"/>: the transmit clock comes from the internal baud rate generator.
+    /// </summary>
+    public static readonly ushort TransmitClockBrg = 0x0800;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_DPLL_DIV8</c> bit of <see cref="SynclinkParams.Flags"/>: the digital phase locked loop divides by 8.
+    /// </summary>
+    public static readonly ushort DpllDivisor8 = 0x1000;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_DPLL_DIV16</c> bit of <see cref="SynclinkParams.Flags"/>: the digital phase locked loop divides by 16.
+    /// </summary>
+    public static readonly ushort DpllDivisor16 = 0x2000;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_UNDERRUN_ABORT15</c> bit of <see cref="SynclinkParams.Flags"/>: a transmit underrun sends an abort sequence of fifteen one bits.
+    /// </summary>
+    public static readonly ushort UnderrunAbort15 = 0x0001;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_UNDERRUN_FLAG</c> bit of <see cref="SynclinkParams.Flags"/>: a transmit underrun sends a closing flag.
+    /// </summary>
+    public static readonly ushort UnderrunFlag = 0x0002;
+
+    /// <summary>
+    /// The <c>HDLC_FLAG_UNDERRUN_CRC</c> bit of <see cref="SynclinkParams.Flags"/>: a transmit underrun sends a deliberately invalid frame check sequence.
+    /// </summary>
+    public static readonly ushort UnderrunBadCrc = 0x0004;
+
+    /// <summary>
     /// The <c>N_HDLC</c> tty line discipline number, selecting frame-oriented processing of the device.
     /// </summary>
     public static readonly int LineDisciplineHdlc = 13;

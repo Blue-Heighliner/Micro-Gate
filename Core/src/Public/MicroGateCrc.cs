@@ -8,15 +8,15 @@ public enum MicroGateCrc
     /// <summary>
     /// No frame check sequence.
     /// </summary>
-    None = 0,
+    None,
 
     /// <summary>
     /// 16-bit CRC-CCITT.
     /// </summary>
-    Crc16Ccitt = 1,
+    Crc16Ccitt,
 
     /// <summary>
     /// 32-bit CRC-CCITT.
     /// </summary>
-    Crc32Ccitt = 2,
+    Crc32Ccitt,
 }

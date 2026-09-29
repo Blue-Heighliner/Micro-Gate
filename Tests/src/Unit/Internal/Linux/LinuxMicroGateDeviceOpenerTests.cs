@@ -28,7 +28,14 @@ public sealed class LinuxMicroGateDeviceOpenerTests
             Encoding = MicroGateEncoding.NrziSpace,
             Crc = MicroGateCrc.Crc32Ccitt,
             IdlePattern = MicroGateIdlePattern.Ones,
-            HardwareAddressFilter = 0x21,
+            Loopback = true,
+            ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
+            TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
+            PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+            UnderrunAction = MicroGateUnderrunAction.Flag,
+            ClockSpeed = 9600,
+            PreambleLength = MicroGatePreambleLength.Bits32,
+            PreamblePattern = MicroGatePreamblePattern.Ones,
         };
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
@@ -37,7 +44,20 @@ public sealed class LinuxMicroGateDeviceOpenerTests
 
         native.Verify(x => x.Open("/dev/ttySLG0"), Times.Once);
         native.Verify(x => x.SelectHdlcLineDiscipline(7), Times.Once);
-        native.Verify(x => x.SetParams(7, It.Is<SynclinkParams>(p => p.Mode == SynclinkConstants.ModeHdlc && p.Encoding == 3 && p.CrcType == 2 && p.AddressFilter == 0x21)), Times.Once);
+        native.Verify(
+            x => x.SetParams(
+                7,
+                It.Is<SynclinkParams>(p =>
+                    p.Mode == SynclinkConstants.ModeHdlc
+                    && p.Loopback == 1
+                    && p.Flags == (0x200 | 0x400 | 0x2000 | 0x0002)
+                    && p.Encoding == 3
+                    && p.ClockSpeed == 9600
+                    && p.CrcType == 2
+                    && p.AddressFilter == 0xFF
+                    && p.PreambleLength == 2
+                    && p.Preamble == 5)),
+            Times.Once);
         native.Verify(x => x.SetTransmitIdle(7, 3), Times.Once);
         native.Verify(x => x.EnableReceiver(7, true), Times.Once);
         native.Verify(x => x.EnableTransmitter(7, true), Times.Once);
@@ -46,13 +66,25 @@ public sealed class LinuxMicroGateDeviceOpenerTests
     }
 
     [Fact]
-    public void Open_WithDefaultOptions_DisablesHardwareAddressFilter()
+    public void Open_WithDefaultOptions_AppliesPhysicalDefaultsAndDisablesHardwareAddressFilter()
     {
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
         opener.Open("ttySLG0", new MicroGatePeerOptions());
 
-        native.Verify(x => x.SetParams(7, It.Is<SynclinkParams>(p => p.Encoding == 0 && p.CrcType == 1 && p.AddressFilter == 0xFF)), Times.Once);
+        native.Verify(
+            x => x.SetParams(
+                7,
+                It.Is<SynclinkParams>(p =>
+                    p.Loopback == 0
+                    && p.Flags == 0
+                    && p.Encoding == 0
+                    && p.ClockSpeed == 4800
+                    && p.CrcType == 2
+                    && p.AddressFilter == 0xFF
+                    && p.PreambleLength == 0
+                    && p.Preamble == 0)),
+            Times.Once);
         native.Verify(x => x.SetTransmitIdle(7, 0), Times.Once);
     }
 
