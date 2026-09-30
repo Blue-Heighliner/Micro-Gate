@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>BlueHeighliner.MicroGate.Monitor</AssemblyName>
+    <AssemblyName>SerialMonitor</AssemblyName>
     <RootNamespace>BlueHeighliner.MicroGate</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -21,7 +21,18 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
+
+  <!-- The published output is the single executable and nothing else: managed debug information is embedded
+       in it (here, and in Core through the project reference below), and the separate
+       symbol and documentation files the build would otherwise copy beside it, including the native
+       libraries' large .pdb files, are dropped from the publish list. -->
+  <Target Name="ExcludeSymbolAndDocumentationFilesFromPublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb' or '%(Extension)' == '.xml'" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
@@ -36,6 +47,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Core\Core.csproj">
+      <AdditionalProperties Condition="'$(RuntimeIdentifier)' != ''">DebugType=embedded</AdditionalProperties>
+    </ProjectReference>
   </ItemGroup>
 </Project>
