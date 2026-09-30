@@ -60,7 +60,31 @@ public sealed class LinuxMicroGateMonitorDeviceOpenerTests
 
         opener.Open("ttySLG0", new MicroGateMonitorOptions());
 
-        native.Verify(x => x.SetParams(7, It.Is<SynclinkParams>(p => p.Encoding == 0 && p.CrcType == 1 && p.AddressFilter == 0xFF)), Times.Once);
+        native.Verify(x => x.SetParams(7, It.Is<SynclinkParams>(p => p.Encoding == 0 && p.CrcType == 2 && p.AddressFilter == 0xFF)), Times.Once);
+    }
+
+    [Fact]
+    public void Open_SelectsTheRs232Interface()
+    {
+        LinuxMicroGateMonitorDeviceOpener opener = new(native.Object);
+
+        opener.Open("ttySLG0", new MicroGateMonitorOptions());
+
+        native.Verify(x => x.SetInterface(7, 1), Times.Once);
+    }
+
+    [Fact]
+    public void Open_WhenTheInterfaceCannotBeSet_StillConfiguresAndReturnsTheDevice()
+    {
+        native.Setup(x => x.SetInterface(7, It.IsAny<int>())).Returns(-1);
+        LinuxMicroGateMonitorDeviceOpener opener = new(native.Object);
+
+        IMicroGateDevice device = opener.Open("ttySLG0", new MicroGateMonitorOptions());
+        device.Dispose();
+
+        native.Verify(x => x.SetParams(7, It.IsAny<SynclinkParams>()), Times.Once);
+        native.Verify(x => x.EnableReceiver(7, true), Times.Once);
+        native.Verify(x => x.Close(7), Times.Once);
     }
 
     [Fact]

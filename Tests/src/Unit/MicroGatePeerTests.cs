@@ -2,7 +2,7 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class MicroGatePeerTests : IDisposable
 {
-    private readonly DeviceHarness harness = new(new MicroGatePeerOptions { Address = 0x21, RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null });
+    private readonly DeviceHarness harness = new(new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null });
     private readonly TimeSpan timeout = TimeSpan.FromSeconds(5);
 
     public void Dispose() => harness.Dispose();
@@ -24,7 +24,7 @@ public sealed class MicroGatePeerTests : IDisposable
         TestObserver<MicroGatePeerState> states = new();
         peer.StateChanged.Subscribe(states);
 
-        Task connecting = peer.Start("port", harness.Options).AsTask();
+        Task connecting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         HdlcFrame sabm = await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await connecting.WaitAsync(timeout);
@@ -44,7 +44,7 @@ public sealed class MicroGatePeerTests : IDisposable
         TestObserver<MicroGatePeerState> states = new();
         peer.StateChanged.Subscribe(states);
 
-        Task starting = peer.Start("port", options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, options).AsTask();
         await states.Next();
         await Task.Delay(100);
         Assert.Empty(harness.Written);
@@ -62,7 +62,7 @@ public sealed class MicroGatePeerTests : IDisposable
         MicroGatePeer peer = harness.CreatePeer();
         MicroGatePeerOptions options = harness.Options with { RetryInterval = TimeSpan.FromMilliseconds(30) };
 
-        Task starting = peer.Start("port", options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, options).AsTask();
         HdlcFrame third = await harness.NextWritten(2);
         int beforeAnswer = harness.Written.Count;
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
@@ -83,7 +83,7 @@ public sealed class MicroGatePeerTests : IDisposable
         MicroGatePeer peer = harness.CreatePeer();
         MicroGatePeerOptions options = harness.Options with { RetryInterval = TimeSpan.FromMilliseconds(40) };
 
-        Task starting = peer.Start("port", options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, options).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.SetAsynchronousBalancedMode));
         await starting.WaitAsync(timeout);
@@ -104,7 +104,7 @@ public sealed class MicroGatePeerTests : IDisposable
         TestObserver<MicroGatePeerState> states = new();
         peer.StateChanged.Subscribe(states);
 
-        Task connecting = peer.Start("port", harness.Options, cancellation.Token).AsTask();
+        Task connecting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options, cancellation.Token).AsTask();
         await harness.NextWritten(0);
         await cancellation.CancelAsync();
 
@@ -119,7 +119,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await peer.Start("port", harness.Options, new CancellationToken(true)));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options, new CancellationToken(true)));
 
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
     }
@@ -130,7 +130,7 @@ public sealed class MicroGatePeerTests : IDisposable
         harness.Opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>())).Throws<IOException>();
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start("port", harness.Options));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options));
 
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
     }
@@ -141,7 +141,7 @@ public sealed class MicroGatePeerTests : IDisposable
         harness.Device.Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>())).Throws<IOException>();
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start("port", harness.Options));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options));
 
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
     }
@@ -150,7 +150,7 @@ public sealed class MicroGatePeerTests : IDisposable
     public async Task Start_WhenDeviceClosesBeforeEstablished_ThrowsIoException()
     {
         await using MicroGatePeer peer = harness.CreatePeer();
-        Task connecting = peer.Start("port", harness.Options).AsTask();
+        Task connecting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         await harness.NextWritten(0);
 
         harness.EndOfInput();
@@ -166,7 +166,7 @@ public sealed class MicroGatePeerTests : IDisposable
         await using MicroGatePeer peer = harness.CreatePeer();
         MicroGatePeerOptions options = harness.Options with { RetryInterval = null };
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await peer.Start("port", options, cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, options, cancellation.Token));
 
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
     }
@@ -176,12 +176,12 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer connected = await harness.Connect();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await connected.Start("port", harness.Options));
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await connected.Start("port", harness.Options));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await connected.Start("port", harness.Address, harness.RemoteAddress, harness.Options));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await connected.Start("port", harness.Address, harness.RemoteAddress, harness.Options));
 
         await using MicroGatePeer disposed = harness.CreatePeer();
         await disposed.DisposeAsync();
-        await Assert.ThrowsAsync<InvalidOperationException>(async () => await disposed.Start("port", harness.Options));
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await disposed.Start("port", harness.Address, harness.RemoteAddress, harness.Options));
     }
 
     [Fact]
@@ -437,7 +437,7 @@ public sealed class MicroGatePeerTests : IDisposable
         MicroGatePeerOptions? captured = null;
         harness.Opener.Setup(x => x.Open("port", It.IsAny<MicroGatePeerOptions>())).Callback<string, MicroGatePeerOptions>((_, passed) => captured = passed).Returns(harness.Device.Object);
         await using MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port").AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress).AsTask();
         await harness.NextWritten(0);
         harness.EndOfInput();
 
@@ -450,16 +450,15 @@ public sealed class MicroGatePeerTests : IDisposable
         Assert.True(captured.DisablePollFinalBit);
         Assert.Equal(7, captured.TransmitWindow);
         Assert.Equal(1500, captured.MaxInfoField);
-        Assert.Equal(MicroGateEncoding.Nrz, captured.Encoding);
-        Assert.Equal(MicroGateCrc.Crc32Ccitt, captured.Crc);
+        Assert.Equal(MicroGateEncoding.Nrz, captured.Link.Encoding);
+        Assert.Equal(MicroGateCrc.Crc32Ccitt, captured.Link.Crc);
         Assert.Equal(MicroGateIdlePattern.Flags, captured.IdlePattern);
-        Assert.Equal(0xFF, captured.Address);
         Assert.False(captured.Loopback);
-        Assert.Equal(MicroGateReceiveClockSource.OwnPin, captured.ReceiveClockSource);
-        Assert.Equal(MicroGateTransmitClockSource.OwnPin, captured.TransmitClockSource);
-        Assert.Equal(MicroGatePhaseLockedLoopDivisor.DivideBy32, captured.PhaseLockedLoopDivisor);
+        Assert.Equal(MicroGateReceiveClockSource.OwnPin, captured.Link.ReceiveClockSource);
+        Assert.Equal(MicroGateTransmitClockSource.OwnPin, captured.Link.TransmitClockSource);
+        Assert.Equal(MicroGatePhaseLockedLoopDivisor.DivideBy32, captured.Link.PhaseLockedLoopDivisor);
         Assert.Equal(MicroGateUnderrunAction.Abort7, captured.UnderrunAction);
-        Assert.Equal(4800, captured.ClockSpeed);
+        Assert.Equal(4800, captured.Link.ClockSpeed);
         Assert.Equal(MicroGatePreambleLength.Bits8, captured.PreambleLength);
         Assert.Equal(MicroGatePreamblePattern.None, captured.PreamblePattern);
     }
@@ -471,7 +470,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMilliseconds(milliseconds) }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMilliseconds(milliseconds) }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
         harness.Opener.Verify(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>()), Times.Never);
@@ -487,7 +486,7 @@ public sealed class MicroGatePeerTests : IDisposable
 
         Mock<IMicroGateDeviceOpener> windowsOpener = new();
         await using MicroGatePeer peer = new(harness.Opener.Object, windowsOpener.Object);
-        Task starting = peer.Start("ttySLG0", harness.Options).AsTask();
+        Task starting = peer.Start("ttySLG0", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         await harness.NextWritten(0);
         harness.EndOfInput();
 
@@ -507,7 +506,7 @@ public sealed class MicroGatePeerTests : IDisposable
 
         Mock<IMicroGateDeviceOpener> linuxOpener = new();
         await using MicroGatePeer peer = new(linuxOpener.Object, harness.Opener.Object);
-        Task starting = peer.Start("COM3", harness.Options).AsTask();
+        Task starting = peer.Start("COM3", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         await harness.NextWritten(0);
         harness.EndOfInput();
 
@@ -527,7 +526,7 @@ public sealed class MicroGatePeerTests : IDisposable
 
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<PlatformNotSupportedException>(async () => await peer.Start("port"));
+        await Assert.ThrowsAsync<PlatformNotSupportedException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -545,7 +544,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { RetransmitInterval = TimeSpan.Zero }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, new MicroGatePeerOptions { RetransmitInterval = TimeSpan.Zero }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -576,7 +575,7 @@ public sealed class MicroGatePeerTests : IDisposable
         harness.Device.Setup(x => x.Read(It.IsAny<byte[]>())).Throws<InvalidOperationException>();
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        IOException exception = await Assert.ThrowsAsync<IOException>(async () => await peer.Start("port", harness.Options with { RetryInterval = null }));
+        IOException exception = await Assert.ThrowsAsync<IOException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options with { RetryInterval = null }));
 
         Assert.IsType<InvalidOperationException>(exception.InnerException);
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
@@ -594,7 +593,7 @@ public sealed class MicroGatePeerTests : IDisposable
             return harness.Device.Object;
         });
         MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", harness.Options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         await Task.Run(() => opening.Wait(timeout));
 
         await peer.DisposeAsync();
@@ -658,7 +657,7 @@ public sealed class MicroGatePeerTests : IDisposable
                 otherThreadRead.TrySetResult(read.Result);
             }
         }));
-        Task starting = peer.Start("port", harness.Options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
 
         Assert.Equal(MicroGatePeerState.Connecting, await otherThreadRead.Task.WaitAsync(timeout));
 
@@ -687,6 +686,34 @@ public sealed class MicroGatePeerTests : IDisposable
         HdlcFrame last = await harness.NextWritten(8);
         Assert.Equal(7, last.SendSequence);
         Assert.Equal(new byte[] { 7 }, last.Payload.ToArray());
+    }
+
+    [Fact]
+    public async Task Send_WhileTheRemotePeerIsNotReady_WaitsUntilItIsReadyAgain()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveNotReady, false));
+        await Task.Delay(100);
+
+        Task sending = peer.Send(new byte[] { 1 }).AsTask();
+        await Task.Delay(150);
+        Assert.False(sending.IsCompleted);
+
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, false));
+        await sending.WaitAsync(timeout);
+
+        Assert.Equal(new byte[] { 1 }, (await harness.NextWritten(1)).Payload.ToArray());
+    }
+
+    [Fact]
+    public async Task Send_WaitingForARemotePeerThatIsNotReady_CanBeCanceled()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveNotReady, false));
+        await Task.Delay(100);
+        using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await peer.Send(new byte[] { 1 }, cancellation.Token));
     }
 
     [Fact]
@@ -760,7 +787,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60) };
         MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", timed).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, timed).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -844,7 +871,7 @@ public sealed class MicroGatePeerTests : IDisposable
     public async Task DisposeAsync_WhenTheDisconnectWriteBlocks_CancelsItByDisablingTheTransmitter()
     {
         MicroGatePeer peer = harness.CreatePeer(TimeSpan.FromMilliseconds(200));
-        Task starting = peer.Start("port", harness.Options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -870,7 +897,7 @@ public sealed class MicroGatePeerTests : IDisposable
         });
         harness.Device.Setup(x => x.DisableReceiver());
         MicroGatePeer peer = harness.CreatePeer(TimeSpan.FromMilliseconds(200));
-        Task starting = peer.Start("port", harness.Options with { RetryInterval = null }).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options with { RetryInterval = null }).AsTask();
         await Task.Delay(100);
 
         await peer.DisposeAsync().AsTask().WaitAsync(timeout);
@@ -881,11 +908,21 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
+    public async Task Start_WithTheSameAddressForBothStations_ThrowsAndStaysIdle()
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+
+        await Assert.ThrowsAsync<ArgumentException>(async () => await peer.Start("port", 0x21, 0x21));
+
+        Assert.Equal(MicroGatePeerState.Idle, peer.State);
+    }
+
+    [Fact]
     public async Task Start_WithNonPositiveMaxRetransmissions_ThrowsAndStaysIdle()
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { MaxRetransmissions = 0 }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, new MicroGatePeerOptions { MaxRetransmissions = 0 }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -897,7 +934,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { TransmitWindow = window }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, new MicroGatePeerOptions { TransmitWindow = window }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -909,7 +946,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { MaxInfoField = maxInfoField }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, new MicroGatePeerOptions { MaxInfoField = maxInfoField }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -921,7 +958,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = harness.CreatePeer();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", new MicroGatePeerOptions { ClockSpeed = clockSpeed }));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, new MicroGatePeerOptions { Link = new() { ClockSpeed = clockSpeed } }));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -935,7 +972,7 @@ public sealed class MicroGatePeerTests : IDisposable
         PayloadObserver payloads = new();
         peer.StateChanged.Subscribe(states);
         peer.Received.Subscribe(payloads);
-        Task starting = peer.Start("port", quick).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -957,7 +994,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60), MaxRetransmissions = 1 };
         MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", quick).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -980,7 +1017,7 @@ public sealed class MicroGatePeerTests : IDisposable
         MicroGatePeer peer = harness.CreatePeer();
         TestObserver<MicroGatePeerState> states = new();
         peer.StateChanged.Subscribe(states);
-        Task starting = peer.Start("port", quick).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -1051,7 +1088,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(40), MaxRetransmissions = 1 };
         MicroGatePeer peer = harness.CreatePeer(TimeSpan.FromSeconds(30));
-        Task starting = peer.Start("port", quick).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -1076,7 +1113,7 @@ public sealed class MicroGatePeerTests : IDisposable
     public async Task Start_WhenDisposedWhileWaitingForTheRemotePeer_ThrowsObjectDisposedException()
     {
         MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", harness.Options).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options).AsTask();
         await harness.NextWritten(0);
 
         await peer.DisposeAsync();
@@ -1090,7 +1127,7 @@ public sealed class MicroGatePeerTests : IDisposable
     public async Task Start_WithSubMillisecondRetransmitInterval_StaysConnected()
     {
         MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", harness.Options with { RetransmitInterval = TimeSpan.FromTicks(5000) }).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, harness.Options with { RetransmitInterval = TimeSpan.FromTicks(5000) }).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);
@@ -1110,7 +1147,7 @@ public sealed class MicroGatePeerTests : IDisposable
         TimeSpan tooLong = TimeSpan.FromMilliseconds(int.MaxValue) + TimeSpan.FromMilliseconds(1);
         MicroGatePeerOptions options = retry ? new() { RetryInterval = tooLong } : new() { RetransmitInterval = tooLong };
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", options));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await peer.Start("port", harness.Address, harness.RemoteAddress, options));
 
         Assert.Equal(MicroGatePeerState.Idle, peer.State);
     }
@@ -1120,7 +1157,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(30), MaxRetransmissions = 1 };
         MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", quick).AsTask();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await starting.WaitAsync(timeout);

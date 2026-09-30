@@ -60,6 +60,14 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
+        if (!byte.TryParse(AddressTextBox.Text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte address)
+            || !byte.TryParse(RemoteAddressTextBox.Text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte remoteAddress)
+            || address == remoteAddress)
+        {
+            AppendLog("Enter two different hex addresses (00-FF), one for this station and one for the remote station.");
+            return;
+        }
+
         IMicroGatePeer newPeer = peerFactory.Create();
         peer = newPeer;
         subscriptions.Add(newPeer.Received.Subscribe(OnReceived));
@@ -69,7 +77,7 @@ internal sealed partial class MainWindow : Window
 
         try
         {
-            await newPeer.Start(portName);
+            await newPeer.Start(portName, address, remoteAddress);
             AppendLog($"Connected to {portName}.");
         }
         catch (Exception ex)

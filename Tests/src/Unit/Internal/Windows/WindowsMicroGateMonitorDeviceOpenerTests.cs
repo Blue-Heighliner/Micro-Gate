@@ -56,7 +56,32 @@ public sealed class WindowsMicroGateMonitorDeviceOpenerTests
 
         opener.Open("COM1", new MicroGateMonitorOptions());
 
-        native.Verify(x => x.SetParams(9, It.Is<MghdlcParams>(p => p.Encoding == 0 && p.CrcType == 1 && p.Addr == 0xFF)), Times.Once);
+        native.Verify(x => x.SetParams(9, It.Is<MghdlcParams>(p => p.Encoding == 0 && p.CrcType == 2 && p.Addr == 0xFF)), Times.Once);
+    }
+
+    [Fact]
+    public void Open_SelectsTheRs232InterfaceAndDiscardsReceiveErrors()
+    {
+        WindowsMicroGateMonitorDeviceOpener opener = new(native.Object);
+
+        opener.Open("COM1", new MicroGateMonitorOptions());
+
+        native.Verify(x => x.SetOption(9, 6u, 1u), Times.Once);
+        native.Verify(x => x.SetOption(9, 8u, 1u), Times.Once);
+    }
+
+    [Fact]
+    public void Open_WhenTheOptionsCannotBeSet_StillConfiguresAndReturnsTheDevice()
+    {
+        native.Setup(x => x.SetOption(9, It.IsAny<uint>(), It.IsAny<uint>())).Returns(5u);
+        WindowsMicroGateMonitorDeviceOpener opener = new(native.Object);
+
+        IMicroGateDevice device = opener.Open("COM1", new MicroGateMonitorOptions());
+        device.Dispose();
+
+        native.Verify(x => x.SetParams(9, It.IsAny<MghdlcParams>()), Times.Once);
+        native.Verify(x => x.EnableReceiver(9, true), Times.Once);
+        native.Verify(x => x.Close(9), Times.Once);
     }
 
     [Fact]

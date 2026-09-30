@@ -16,12 +16,12 @@ public enum MicroGateTransmitClockSource
     OtherPin,
 
     /// <summary>
-    /// The phase locked loop recovered from the received data stream, so the transmit clock tracks the receive clock. <see cref="MicroGatePeerOptions.PhaseLockedLoopDivisor"/> selects the divisor.
+    /// The phase locked loop recovered from the received data stream, so the transmit clock tracks the receive clock. <see cref="MicroGateLinkOptions.PhaseLockedLoopDivisor"/> selects the divisor.
     /// </summary>
     PhaseLockedLoop,
 
     /// <summary>
-    /// The device's internal baud rate generator, running at <see cref="MicroGatePeerOptions.ClockSpeed"/>.
+    /// The device's internal baud rate generator, running at <see cref="MicroGateLinkOptions.ClockSpeed"/>.
     /// </summary>
     BaudRateGenerator,
 }

@@ -24,17 +24,20 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     {
         MicroGatePeerOptions options = new()
         {
-            Encoding = MicroGateEncoding.BiphaseMark,
-            Crc = MicroGateCrc.None,
+            Link = new()
+            {
+                Encoding = MicroGateEncoding.BiphaseMark,
+                Crc = MicroGateCrc.None,
+                ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
+                TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
+                PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+                ClockSpeed = 9600,
+            },
             IdlePattern = MicroGateIdlePattern.Mark,
-            Loopback = true,
-            ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
-            TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
-            PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
             UnderrunAction = MicroGateUnderrunAction.Flag,
-            ClockSpeed = 9600,
             PreambleLength = MicroGatePreambleLength.Bits32,
             PreamblePattern = MicroGatePreamblePattern.Ones,
+            Loopback = true,
         };
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
@@ -82,6 +85,31 @@ public sealed class WindowsMicroGateDeviceOpenerTests
                     && p.PreamblePattern == 0)),
             Times.Once);
         native.Verify(x => x.SetIdleMode(9, 0u), Times.Once);
+    }
+
+    [Fact]
+    public void Open_SelectsTheRs232InterfaceAndDiscardsReceiveErrors()
+    {
+        WindowsMicroGateDeviceOpener opener = new(native.Object);
+
+        opener.Open("COM1", new MicroGatePeerOptions());
+
+        native.Verify(x => x.SetOption(9, 6u, 1u), Times.Once);
+        native.Verify(x => x.SetOption(9, 8u, 1u), Times.Once);
+    }
+
+    [Fact]
+    public void Open_WhenTheOptionsCannotBeSet_StillConfiguresAndReturnsTheDevice()
+    {
+        native.Setup(x => x.SetOption(9, It.IsAny<uint>(), It.IsAny<uint>())).Returns(5u);
+        WindowsMicroGateDeviceOpener opener = new(native.Object);
+
+        IMicroGateDevice device = opener.Open("COM1", new MicroGatePeerOptions());
+        device.Dispose();
+
+        native.Verify(x => x.SetParams(9, It.IsAny<MghdlcParams>()), Times.Once);
+        native.Verify(x => x.EnableReceiver(9, true), Times.Once);
+        native.Verify(x => x.Close(9), Times.Once);
     }
 
     [Fact]

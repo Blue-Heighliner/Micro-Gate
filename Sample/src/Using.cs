@@ -8,5 +8,6 @@ global using Avalonia.X11;
 global using Microsoft.Extensions.DependencyInjection;
 global using System.Buffers;
 global using System.Collections.ObjectModel;
+global using System.Globalization;
 global using System.Reflection;
 global using System.Text;

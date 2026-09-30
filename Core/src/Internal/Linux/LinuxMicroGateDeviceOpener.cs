@@ -35,15 +35,17 @@ internal sealed class LinuxMicroGateDeviceOpener(ILinuxNative native) : IMicroGa
     private void ConfigurePort(int fileDescriptor, string path, MicroGatePeerOptions options)
     {
         Check(native.SelectHdlcLineDiscipline(fileDescriptor), "select the HDLC line discipline", path);
+        // Setting the interface is best effort: it needs privileges the user may lack, and a device that cannot switch is still usable as it is.
+        native.SetInterface(fileDescriptor, SynclinkConstants.InterfaceRs232);
 
         SynclinkParams parameters = new()
         {
             Mode = SynclinkConstants.ModeHdlc,
             Loopback = (byte)(options.Loopback ? 1 : 0),
             Flags = MapFlags(options),
-            Encoding = MapEncoding(options.Encoding),
-            ClockSpeed = (nuint)options.ClockSpeed,
-            CrcType = MapCrc(options.Crc),
+            Encoding = MapEncoding(options.Link.Encoding),
+            ClockSpeed = (nuint)options.Link.ClockSpeed,
+            CrcType = MapCrc(options.Link.Crc),
             AddressFilter = SynclinkConstants.AddressFilterDisabled,
             PreambleLength = MapPreambleLength(options.PreambleLength),
             Preamble = MapPreamblePattern(options.PreamblePattern),
@@ -64,7 +66,7 @@ internal sealed class LinuxMicroGateDeviceOpener(ILinuxNative native) : IMicroGa
     }
 
     private ushort MapFlags(MicroGatePeerOptions options) =>
-        (ushort)(MapReceiveClockSource(options.ReceiveClockSource) | MapTransmitClockSource(options.TransmitClockSource) | MapPhaseLockedLoopDivisor(options.PhaseLockedLoopDivisor) | MapUnderrunAction(options.UnderrunAction));
+        (ushort)(MapReceiveClockSource(options.Link.ReceiveClockSource) | MapTransmitClockSource(options.Link.TransmitClockSource) | MapPhaseLockedLoopDivisor(options.Link.PhaseLockedLoopDivisor) | MapUnderrunAction(options.UnderrunAction));
 
     private ushort MapReceiveClockSource(MicroGateReceiveClockSource value) => value switch
     {

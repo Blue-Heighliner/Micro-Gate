@@ -147,6 +147,16 @@ internal static class SynclinkConstants
     public static readonly nuint SetTransmitIdle = Io(2);
 
     /// <summary>
+    /// The <c>MGSL_IOCSIF</c> request that sets the serial interface type.
+    /// </summary>
+    public static readonly nuint SetInterface = Io(10);
+
+    /// <summary>
+    /// The <c>MGSL_INTERFACE_RS232</c> serial interface type for <see cref="SetInterface"/>.
+    /// </summary>
+    public static readonly int InterfaceRs232 = 1;
+
+    /// <summary>
     /// The <c>MGSL_IOCTXENABLE</c> request that enables or disables the transmitter.
     /// </summary>
     public static readonly nuint EnableTransmitter = Io(4);

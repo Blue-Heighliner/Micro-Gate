@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// The divisor the phase locked loop applies when recovering a clock from the data stream. Only meaningful when <see cref="MicroGatePeerOptions.ReceiveClockSource"/> or <see cref="MicroGatePeerOptions.TransmitClockSource"/> is <see cref="MicroGateReceiveClockSource.PhaseLockedLoop"/>/<see cref="MicroGateTransmitClockSource.PhaseLockedLoop"/>.
+/// The divisor the phase locked loop applies when recovering a clock from the data stream. Only meaningful when <see cref="MicroGateLinkOptions.ReceiveClockSource"/> or <see cref="MicroGateLinkOptions.TransmitClockSource"/> is <see cref="MicroGateReceiveClockSource.PhaseLockedLoop"/>/<see cref="MicroGateTransmitClockSource.PhaseLockedLoop"/>.
 /// </summary>
 public enum MicroGatePhaseLockedLoopDivisor
 {

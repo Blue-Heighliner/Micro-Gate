@@ -37,6 +37,15 @@ internal interface IWindowsNative
     uint SetIdleMode(nint handle, uint idleMode);
 
     /// <summary>
+    /// Sets a device option.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="optionId">The option to set, one of the driver's <c>MGSL_OPT_*</c> ids.</param>
+    /// <param name="value">The option's value.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint SetOption(nint handle, uint optionId, uint value);
+
+    /// <summary>
     /// Enables or disables the receiver. Disabling cancels any blocked read.
     /// </summary>
     /// <param name="handle">The device handle.</param>
@@ -110,6 +119,10 @@ internal sealed class WindowsNative : IWindowsNative
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]
     public uint SetIdleMode(nint handle, uint idleMode) => Mghdlc.MgslSetIdleMode(handle, idleMode);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint SetOption(nint handle, uint optionId, uint value) => Mghdlc.MgslSetOption(handle, optionId, value);
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]

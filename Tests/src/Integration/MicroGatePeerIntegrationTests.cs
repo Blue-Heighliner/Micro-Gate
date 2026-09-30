@@ -16,7 +16,7 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         IMicroGatePeer peer = new MicroGatePeer();
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start("microgate-does-not-exist"));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start("microgate-does-not-exist", 0x06, 0x05));
 
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
     }
@@ -31,7 +31,7 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         IMicroGatePeer peer = CreateTolerantPeer();
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, new MicroGatePeerOptions { Address = 0x05 }));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, 0x06, 0x05, new MicroGatePeerOptions()));
 
         Assert.Equal(new byte[] { 0x05, 0x2F }, await File.ReadAllBytesAsync(file));
     }
@@ -46,7 +46,7 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         IMicroGatePeer peer = CreateTolerantPeer();
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, new MicroGatePeerOptions { Address = 0x05, DisablePollFinalBit = false }));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, 0x06, 0x05, new MicroGatePeerOptions { DisablePollFinalBit = false }));
 
         Assert.Equal(new byte[] { 0x05, 0x3F }, await File.ReadAllBytesAsync(file));
     }
@@ -63,7 +63,7 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
         TestObserver<MicroGatePeerState> states = new();
         peer.StateChanged.Subscribe(states);
 
-        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, new MicroGatePeerOptions { RetryInterval = null }));
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, 0x06, 0x05, new MicroGatePeerOptions { RetryInterval = null }));
 
         Assert.Empty(await File.ReadAllBytesAsync(file));
         Assert.Equal([MicroGatePeerState.Connecting, MicroGatePeerState.Disconnected], states.Seen);
@@ -79,7 +79,7 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         IMicroGatePeer peer = new MicroGatePeer();
 
-        IOException exception = await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file));
+        IOException exception = await Assert.ThrowsAsync<IOException>(async () => await peer.Start(file, 0x06, 0x05));
 
         Assert.Contains(file, exception.Message);
         Assert.Contains("SyncLink", exception.Message);

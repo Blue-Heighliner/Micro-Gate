@@ -5,7 +5,7 @@
 [![Build](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml/badge.svg)](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml)
 [![Coverage](https://raw.githubusercontent.com/Blue-Heighliner/Micro-Gate/main/.github/badges/badge_linecoverage.svg)](https://github.com/Blue-Heighliner/Micro-Gate/actions/workflows/build.yml)
 
-A C# API for using [MicroGate](https://www.microgate.com) SyncLink devices and drivers to create and communicate over serial USB/PCI card devices using the HDLC protocol in asynchronous balanced mode (ABM), on both Windows (via `mghdlc.dll`'s base API) and Linux (via the SyncLink driver's tty device). Its only dependency is [System.Reactive](https://github.com/dotnet/reactive); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+A C# API for using [MicroGate](https://www.microgate.com) SyncLink devices and drivers to create and communicate over serial USB/PCI card devices using the HDLC protocol in asynchronous balanced mode (ABM), compatible with any HDLC or ADCCP station in that mode, on both Windows (via `mghdlc.dll`'s base API) and Linux (via the SyncLink driver's tty device). Its only dependency is [System.Reactive](https://github.com/dotnet/reactive); see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
 ## Installing
 
@@ -26,7 +26,7 @@ IReadOnlyList<string> names = await ports.GetPorts();
 await using IMicroGatePeer peer = factory.Create();
 peer.Received.Subscribe(data => Console.WriteLine(System.Text.Encoding.UTF8.GetString(data.Span)));
 
-await peer.Start(names[0]);
+await peer.Start(names[0], address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());
 ```
 

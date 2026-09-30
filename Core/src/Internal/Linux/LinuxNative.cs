@@ -74,6 +74,14 @@ internal interface ILinuxNative
     int SetTransmitIdle(int fileDescriptor, int idlePattern);
 
     /// <summary>
+    /// Sets the serial interface type of the device.
+    /// </summary>
+    /// <param name="fileDescriptor">The file descriptor to configure.</param>
+    /// <param name="interfaceType">The numeric interface type.</param>
+    /// <returns>A driver-dependent result, or -1 on failure.</returns>
+    int SetInterface(int fileDescriptor, int interfaceType);
+
+    /// <summary>
     /// Enables or disables the receiver. Disabling cancels any blocked read.
     /// </summary>
     /// <param name="fileDescriptor">The file descriptor to configure.</param>
@@ -174,6 +182,9 @@ internal sealed class LinuxNative : ILinuxNative
 
     /// <inheritdoc />
     public int SetTransmitIdle(int fileDescriptor, int idlePattern) => LibC.Ioctl(fileDescriptor, SynclinkConstants.SetTransmitIdle, idlePattern);
+
+    /// <inheritdoc />
+    public int SetInterface(int fileDescriptor, int interfaceType) => LibC.Ioctl(fileDescriptor, SynclinkConstants.SetInterface, interfaceType);
 
     /// <inheritdoc />
     public int EnableReceiver(int fileDescriptor, bool enabled) => LibC.Ioctl(fileDescriptor, SynclinkConstants.EnableReceiver, enabled ? SynclinkConstants.Enabled : SynclinkConstants.Disabled);

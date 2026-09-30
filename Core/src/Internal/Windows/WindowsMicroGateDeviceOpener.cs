@@ -31,14 +31,17 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMic
 
     private void ConfigurePort(nint handle, MicroGatePeerOptions options)
     {
+        // Both options are best effort: setting the interface can need privileges the user lacks, and a device that cannot switch is still usable as it is.
+        native.SetOption(handle, MghdlcConstants.OptionInterface, MghdlcConstants.InterfaceRs232);
+        native.SetOption(handle, MghdlcConstants.OptionReceiveErrorMask, MghdlcConstants.OptionOn);
         MghdlcParams parameters = new()
         {
             Mode = MghdlcConstants.ModeHdlc,
             Loopback = (byte)(options.Loopback ? 1 : 0),
             Flags = MapFlags(options),
-            Encoding = MapEncoding(options.Encoding),
-            ClockSpeed = (uint)options.ClockSpeed,
-            CrcType = MapCrc(options.Crc),
+            Encoding = MapEncoding(options.Link.Encoding),
+            ClockSpeed = (uint)options.Link.ClockSpeed,
+            CrcType = MapCrc(options.Link.Crc),
             Addr = MghdlcConstants.AddressFilterDisabled,
             PreambleLength = MapPreambleLength(options.PreambleLength),
             PreamblePattern = MapPreamblePattern(options.PreamblePattern),
@@ -58,7 +61,7 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMic
     }
 
     private ushort MapFlags(MicroGatePeerOptions options) =>
-        (ushort)(MapReceiveClockSource(options.ReceiveClockSource) | MapTransmitClockSource(options.TransmitClockSource) | MapPhaseLockedLoopDivisor(options.PhaseLockedLoopDivisor) | MapUnderrunAction(options.UnderrunAction));
+        (ushort)(MapReceiveClockSource(options.Link.ReceiveClockSource) | MapTransmitClockSource(options.Link.TransmitClockSource) | MapPhaseLockedLoopDivisor(options.Link.PhaseLockedLoopDivisor) | MapUnderrunAction(options.UnderrunAction));
 
     private ushort MapReceiveClockSource(MicroGateReceiveClockSource value) => value switch
     {

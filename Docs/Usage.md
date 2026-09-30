@@ -23,11 +23,11 @@ On Linux these are `ttySLG*` (PCI/PCIe) and MicroGate `ttyUSB*` devices; on Wind
 using BlueHeighliner.MicroGate;
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0");
+await peer.Start("ttySLG0", address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());
 ```
 
-With no options the default settings apply: NRZ encoding, CRC-32-CCITT, flag idle, and HDLC address `0xFF`, which the remote peer must also use.
+Every peer needs two different HDLC addresses: its own (`address`), which the remote peer sends its commands to, and the remote peer's (`remoteAddress`), which this peer sends its commands to. The remote peer must be started with them the other way round, here `0x03` and `0x01`. With no options the default settings apply: NRZ encoding, CRC-32-CCITT, and flag idle.
 
 ## Subscribe before connecting
 
@@ -40,7 +40,7 @@ await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 peer.StateChanged.Subscribe(state => Console.WriteLine($"State: {state}"));
 peer.Received.Subscribe(data => Console.WriteLine(Encoding.UTF8.GetString(data.Span)));
 
-await peer.Start("ttySLG0");
+await peer.Start("ttySLG0", address: 0x01, remoteAddress: 0x03);
 ```
 
 Subscribing first means no state change and no early frame is missed. The data an observer receives is backed by an array allocated for that frame, so it can be kept or passed to another thread, but it is shared between observers and must not be modified.
@@ -55,7 +55,7 @@ MicroGatePeerOptions options = new() { RetryInterval = null };
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 
 using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
-await peer.Start("ttySLG0", options, timeout.Token);
+await peer.Start("ttySLG0", 0x01, 0x03, options, timeout.Token);
 ```
 
 With a `null` retry interval this side never sends a connection request and completes when the remote peer's request arrives. By default both sides send requests every second until answered, so either may be started first.
@@ -68,7 +68,7 @@ using BlueHeighliner.MicroGate;
 MicroGatePeerOptions options = new() { RetryInterval = TimeSpan.FromMilliseconds(250) };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", options);
+await peer.Start("ttySLG0", 0x01, 0x03, options);
 ```
 
 ## Tune retransmission
@@ -79,7 +79,7 @@ using BlueHeighliner.MicroGate;
 MicroGatePeerOptions options = new() { RetransmitInterval = TimeSpan.FromMilliseconds(250) };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", options);
+await peer.Start("ttySLG0", 0x01, 0x03, options);
 
 byte[] message = new byte[peer.MaxPayloadSize];
 await peer.Send(message);
@@ -102,10 +102,10 @@ peer.StateChanged.Subscribe(
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { Address = 0x01, DisablePollFinalBit = false };
+MicroGatePeerOptions options = new() { DisablePollFinalBit = false };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", options);
+await peer.Start("ttySLG0", 0x01, 0x03, options);
 ```
 
 `DisablePollFinalBit` is `true` by default, so every frame the station sends has the poll/final bit at 0, including acknowledgements to a peer frame that had it set. Set it to `false` for a remote peer that expects the bit to reflect the frame's actual role.
@@ -117,13 +117,16 @@ using BlueHeighliner.MicroGate;
 
 MicroGatePeerOptions options = new()
 {
-    Encoding = MicroGateEncoding.NrziSpace,
-    Crc = MicroGateCrc.Crc16Ccitt,
+    Link = new()
+    {
+        Encoding = MicroGateEncoding.NrziSpace,
+        Crc = MicroGateCrc.Crc16Ccitt,
+    },
     IdlePattern = MicroGateIdlePattern.Flags,
 };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", options);
+await peer.Start("ttySLG0", 0x01, 0x03, options);
 ```
 
 Both peers must agree on encoding, CRC, and idle pattern.

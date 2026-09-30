@@ -18,8 +18,8 @@ public sealed class LinuxPseudoTerminalTests
             return;
         }
 
-        MicroGatePeerOptions options = new() { Address = 0x33 };
-        HdlcStateMachine peer = new(options);
+        MicroGatePeerOptions options = new();
+        HdlcStateMachine peer = new(options, 0x34, 0x33);
         BlockingCollection<byte[]> peerPayloads = [];
         TaskCompletionSource peerSawDisconnect = new();
         bool stopPeer = false;
@@ -71,7 +71,7 @@ public sealed class LinuxPseudoTerminalTests
         connection.Received.Subscribe(received);
         connection.StateChanged.Subscribe(states);
 
-        await connection.Start(terminal.SlavePath, options).AsTask().WaitAsync(timeout);
+        await connection.Start(terminal.SlavePath, 0x33, 0x34, options).AsTask().WaitAsync(timeout);
 
         Assert.True(connection.IsConnected);
 

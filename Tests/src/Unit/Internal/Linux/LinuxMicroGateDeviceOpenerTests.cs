@@ -25,17 +25,20 @@ public sealed class LinuxMicroGateDeviceOpenerTests
     {
         MicroGatePeerOptions options = new()
         {
-            Encoding = MicroGateEncoding.NrziSpace,
-            Crc = MicroGateCrc.Crc32Ccitt,
+            Link = new()
+            {
+                Encoding = MicroGateEncoding.NrziSpace,
+                Crc = MicroGateCrc.Crc32Ccitt,
+                ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
+                TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
+                PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+                ClockSpeed = 9600,
+            },
             IdlePattern = MicroGateIdlePattern.Ones,
-            Loopback = true,
-            ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
-            TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
-            PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
             UnderrunAction = MicroGateUnderrunAction.Flag,
-            ClockSpeed = 9600,
             PreambleLength = MicroGatePreambleLength.Bits32,
             PreamblePattern = MicroGatePreamblePattern.Ones,
+            Loopback = true,
         };
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
@@ -86,6 +89,30 @@ public sealed class LinuxMicroGateDeviceOpenerTests
                     && p.Preamble == 0)),
             Times.Once);
         native.Verify(x => x.SetTransmitIdle(7, 0), Times.Once);
+    }
+
+    [Fact]
+    public void Open_SelectsTheRs232Interface()
+    {
+        LinuxMicroGateDeviceOpener opener = new(native.Object);
+
+        opener.Open("ttySLG0", new MicroGatePeerOptions());
+
+        native.Verify(x => x.SetInterface(7, 1), Times.Once);
+    }
+
+    [Fact]
+    public void Open_WhenTheInterfaceCannotBeSet_StillConfiguresAndReturnsTheDevice()
+    {
+        native.Setup(x => x.SetInterface(7, It.IsAny<int>())).Returns(-1);
+        LinuxMicroGateDeviceOpener opener = new(native.Object);
+
+        IMicroGateDevice device = opener.Open("ttySLG0", new MicroGatePeerOptions());
+        device.Dispose();
+
+        native.Verify(x => x.SetParams(7, It.IsAny<SynclinkParams>()), Times.Once);
+        native.Verify(x => x.EnableReceiver(7, true), Times.Once);
+        native.Verify(x => x.Close(7), Times.Once);
     }
 
     [Fact]

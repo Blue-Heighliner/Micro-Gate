@@ -41,6 +41,10 @@ internal sealed class DeviceHarness : IDisposable
     private readonly List<byte[]> written = [];
     private readonly SemaphoreSlim writtenSignal = new(0);
 
+    public byte Address { get; } = 0x21;
+
+    public byte RemoteAddress { get; } = 0x22;
+
     public MicroGatePeerOptions Options { get; }
 
     public Mock<IMicroGateDevice> Device { get; } = new();
@@ -61,7 +65,7 @@ internal sealed class DeviceHarness : IDisposable
     public HdlcFrame Peer(HdlcFrameKind kind, bool pollFinal = true, int sendSequence = 0, ReadOnlyMemory<byte> payload = default, int receiveSequence = 0) =>
         new()
         {
-            Address = Options.Address,
+            Address = kind is HdlcFrameKind.Information or HdlcFrameKind.SetAsynchronousBalancedMode or HdlcFrameKind.Disconnect ? Address : RemoteAddress,
             Kind = kind,
             PollFinal = pollFinal,
             SendSequence = sendSequence,
@@ -90,7 +94,7 @@ internal sealed class DeviceHarness : IDisposable
     public async Task<MicroGatePeer> Connect()
     {
         MicroGatePeer peer = CreatePeer();
-        Task connecting = peer.Start("port", Options).AsTask();
+        Task connecting = peer.Start("port", Address, RemoteAddress, Options).AsTask();
         await NextWritten(0);
         Receive(Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await connecting.WaitAsync(TimeSpan.FromSeconds(5));
@@ -100,7 +104,7 @@ internal sealed class DeviceHarness : IDisposable
     public async Task<MicroGatePeer> Listen()
     {
         MicroGatePeer peer = CreatePeer();
-        Task listening = peer.Start("port", Options with { RetryInterval = null }).AsTask();
+        Task listening = peer.Start("port", Address, RemoteAddress, Options with { RetryInterval = null }).AsTask();
         Receive(Peer(HdlcFrameKind.SetAsynchronousBalancedMode));
         await listening.WaitAsync(TimeSpan.FromSeconds(5));
         return peer;

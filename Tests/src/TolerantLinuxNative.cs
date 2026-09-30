@@ -22,6 +22,8 @@ internal sealed class TolerantLinuxNative(ILinuxNative inner) : ILinuxNative
 
     public int SetTransmitIdle(int fileDescriptor, int idlePattern) => 0;
 
+    public int SetInterface(int fileDescriptor, int interfaceType) => 0;
+
     public int EnableReceiver(int fileDescriptor, bool enabled) => 0;
 
     public int EnableTransmitter(int fileDescriptor, bool enabled) => 0;

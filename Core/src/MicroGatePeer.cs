@@ -37,10 +37,13 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// Opens the device for the specified port and establishes the link with the remote peer, completing once it is up. The peer sends connection requests at <see cref="MicroGatePeerOptions.RetryInterval"/> (none if that is <see langword="null"/>) and also accepts a request from the remote peer, so the two sides need no fixed initiator.
     /// </summary>
     /// <param name="portName">The name of the serial port the device is attached to.</param>
+    /// <param name="address">The HDLC address of this station: carried by every response it sends and expected on every command it receives. Must match the address the remote station sends its commands to.</param>
+    /// <param name="remoteAddress">The HDLC address of the remote station: carried by every command this station sends and expected on every response it receives. Must match the remote station's own address, and differ from <paramref name="address"/>. ADCCP and HDLC identify the sender of a response and the receiver of a command through it, so a link always needs two different addresses.</param>
     /// <param name="options">The device and HDLC settings to apply, or <see langword="null"/> to use the defaults.</param>
     /// <param name="cancellation">A token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Connected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/> or <see cref="MicroGatePeerOptions.RetransmitInterval"/> is zero, negative, or longer than <see cref="int.MaxValue"/> milliseconds, <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative, <see cref="MicroGatePeerOptions.TransmitWindow"/> is outside 1 to 7, <see cref="MicroGatePeerOptions.MaxInfoField"/> is outside 1 to 4090, or <see cref="MicroGatePeerOptions.ClockSpeed"/> is zero or negative.</exception>
+    /// <exception cref="ArgumentException"><paramref name="address"/> and <paramref name="remoteAddress"/> are the same.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/> or <see cref="MicroGatePeerOptions.RetransmitInterval"/> is zero, negative, or longer than <see cref="int.MaxValue"/> milliseconds, <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative, <see cref="MicroGatePeerOptions.TransmitWindow"/> is outside 1 to 7, <see cref="MicroGatePeerOptions.MaxInfoField"/> is outside 1 to 4090, or <see cref="MicroGateLinkOptions.ClockSpeed"/> is zero or negative.</exception>
     /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     /// <exception cref="InvalidOperationException">The peer has already been started or has been disposed.</exception>
     /// <exception cref="IOException">The device could not be opened, or it closed before a connection was established.</exception>
@@ -49,7 +52,7 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// <remarks>
     /// An invalid argument or unsupported platform leaves the peer <see cref="MicroGatePeerState.Idle"/>; any failure after that disposes the peer, leaving it <see cref="MicroGatePeerState.Disconnected"/>.
     /// </remarks>
-    ValueTask Start(string portName, MicroGatePeerOptions? options = null, CancellationToken cancellation = default);
+    ValueTask Start(string portName, byte address, byte remoteAddress, MicroGatePeerOptions? options = null, CancellationToken cancellation = default);
 
     /// <summary>
     /// Sends data to the remote peer as one HDLC information frame. Frames are numbered and kept until the remote peer acknowledges them, and are sent again if it rejects them or does not answer, so data arrives in order and without gaps while the peer stays connected. Only a limited number of frames may be unacknowledged at once; further sends wait for an acknowledgement.
@@ -119,6 +122,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private readonly int maxInfoField = 4090;
     private readonly TimeSpan maxInterval = TimeSpan.FromMilliseconds(int.MaxValue);
     private MicroGatePeerOptions options = new();
+    private TaskCompletionSource? peerBusyGate;
     private IHdlcStateMachine? stateMachine;
     private SemaphoreSlim? sendWindow;
     private IMicroGateDevice? device;
@@ -158,8 +162,13 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private IHdlcStateMachine Machine => stateMachine ?? throw new InvalidOperationException("The peer has not been started.");
 
     /// <inheritdoc />
-    public async ValueTask Start(string portName, MicroGatePeerOptions? options = null, CancellationToken cancellation = default)
+    public async ValueTask Start(string portName, byte address, byte remoteAddress, MicroGatePeerOptions? options = null, CancellationToken cancellation = default)
     {
+        if (address == remoteAddress)
+        {
+            throw new ArgumentException("The address and the remote address must be different.", nameof(remoteAddress));
+        }
+
         options ??= new();
         ValidateOptions(options);
         IMicroGateDeviceOpener selectedOpener = SelectOpener();
@@ -172,7 +181,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
             }
 
             this.options = options;
-            stateMachine = new HdlcStateMachine(options);
+            stateMachine = new HdlcStateMachine(options, address, remoteAddress);
             sendWindow = new SemaphoreSlim(stateMachine.WindowSize, stateMachine.WindowSize);
             SetState(MicroGatePeerState.Connecting);
         }
@@ -228,6 +237,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     {
         ValidateSize(data.Length);
         IHdlcStateMachine machine = RequireConnected();
+        await WaitForPeerReady(cancellation).ConfigureAwait(false);
         await AcquireSendSlot(cancellation).ConfigureAwait(false);
         await SendFrame(machine, data, cancellation).ConfigureAwait(false);
     }
@@ -239,6 +249,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         {
             ValidateSize(data.Memory.Length);
             IHdlcStateMachine machine = RequireConnected();
+            await WaitForPeerReady(cancellation).ConfigureAwait(false);
             await AcquireSendSlot(cancellation).ConfigureAwait(false);
             await SendFrame(machine, data.Memory, cancellation).ConfigureAwait(false);
         }
@@ -314,7 +325,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
             throw new ArgumentOutOfRangeException("options", $"The maximum info field size must be between 1 and {maxInfoField} bytes.");
         }
 
-        if (candidate.ClockSpeed <= 0)
+        if (candidate.Link.ClockSpeed <= 0)
         {
             throw new ArgumentOutOfRangeException("options", "The clock speed must be greater than zero.");
         }
@@ -400,6 +411,49 @@ public sealed class MicroGatePeer : IMicroGatePeer
         {
             throw new ArgumentOutOfRangeException("data", length, $"A payload can be at most {MaxPayloadSize} bytes.");
         }
+    }
+
+    private async Task WaitForPeerReady(CancellationToken cancellation)
+    {
+        TaskCompletionSource? gate;
+        lock (stateLock)
+        {
+            gate = peerBusyGate;
+        }
+
+        if (gate is null)
+        {
+            return;
+        }
+
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
+        try
+        {
+            await gate.Task.WaitAsync(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+        {
+            throw new IOException("The peer disconnected while waiting to send.");
+        }
+    }
+
+    private void UpdatePeerBusy(bool busy)
+    {
+        TaskCompletionSource? released = null;
+        lock (stateLock)
+        {
+            if (busy && peerBusyGate is null)
+            {
+                peerBusyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            else if (!busy && peerBusyGate is not null)
+            {
+                released = peerBusyGate;
+                peerBusyGate = null;
+            }
+        }
+
+        released?.TrySetResult();
     }
 
     private async Task AcquireSendSlot(CancellationToken cancellation)
@@ -520,6 +574,8 @@ public sealed class MicroGatePeer : IMicroGatePeer
                 {
                     ReleaseSendSlots(result.Acknowledged);
                 }
+
+                UpdatePeerBusy(Protocol(() => Machine.PeerBusy));
 
                 if (result.Payload is { } payload && received.HasObservers)
                 {

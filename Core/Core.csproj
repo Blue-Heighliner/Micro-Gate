@@ -14,7 +14,7 @@
   <PropertyGroup>
     <PackageId>BlueHeighliner.MicroGate</PackageId>
     <Authors>Chris Markwardt</Authors>
-    <Description>API for communicating with MicroGate SyncLink serial USB/PCI devices using the HDLC protocol in asynchronous balanced mode.</Description>
+    <Description>API for communicating with MicroGate SyncLink serial USB/PCI devices using the HDLC protocol in asynchronous balanced mode, compatible with HDLC and ADCCP stations.</Description>
     <PackageTags>MicroGate;SyncLink;HDLC;Serial;ABM</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

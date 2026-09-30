@@ -2,18 +2,18 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class HdlcStateMachineReliabilityTests
 {
-    private readonly MicroGatePeerOptions options = new() { Address = 0x11 };
+    private readonly MicroGatePeerOptions options = new();
 
     private (HdlcStateMachine Local, HdlcStateMachine Remote) EstablishConnectedPair()
     {
-        HdlcStateMachine local = new(options);
-        HdlcStateMachine remote = new(options);
+        HdlcStateMachine local = new(options, 0x11, 0x12);
+        HdlcStateMachine remote = new(options, 0x12, 0x11);
         local.Receive(remote.Receive(local.CreateConnect()).Response!.Value);
         return (local, remote);
     }
 
     private byte[] Frame(HdlcFrameKind kind, int receiveSequence = 0, int sendSequence = 0, byte[]? payload = null) =>
-        new HdlcFrame { Address = 0x11, Kind = kind, PollFinal = false, ReceiveSequence = receiveSequence, SendSequence = sendSequence, Payload = payload ?? [] }.ToArray();
+        new HdlcFrame { Address = kind is HdlcFrameKind.Information or HdlcFrameKind.SetAsynchronousBalancedMode or HdlcFrameKind.Disconnect ? (byte)0x11 : (byte)0x12, Kind = kind, PollFinal = false, ReceiveSequence = receiveSequence, SendSequence = sendSequence, Payload = payload ?? [] }.ToArray();
 
     [Fact]
     public void CreateInformation_KeepsFramesUntilWindowIsFull()
@@ -225,8 +225,8 @@ public sealed class HdlcStateMachineReliabilityTests
     [Fact]
     public void Receive_UaForARequestSentWhileAlreadyConnected_ResetsTheLinkLikeThePeerDid()
     {
-        HdlcStateMachine local = new(options);
-        HdlcStateMachine remote = new(options);
+        HdlcStateMachine local = new(options, 0x11, 0x12);
+        HdlcStateMachine remote = new(options, 0x12, 0x11);
         ReadOnlyMemory<byte> first = local.CreateConnect();
         ReadOnlyMemory<byte> second = local.CreateConnect();
         HdlcReceiveResult firstAnswer = remote.Receive(first);
@@ -268,7 +268,7 @@ public sealed class HdlcStateMachineReliabilityTests
     [Fact]
     public void Receive_SupervisoryFrameWhileDisconnected_IsIgnored()
     {
-        HdlcStateMachine machine = new(options);
+        HdlcStateMachine machine = new(options, 0x11, 0x12);
 
         HdlcReceiveResult result = machine.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 1));
 

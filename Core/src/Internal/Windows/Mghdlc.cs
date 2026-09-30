@@ -56,6 +56,17 @@ internal static partial class Mghdlc
     public static partial uint MgslEnableTransmitter(nint handle, uint enableFlag);
 
     /// <summary>
+    /// Sets a device option, per <c>MgslSetOption</c>.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="optionId">The option to set, one of the <c>MGSL_OPT_*</c> ids.</param>
+    /// <param name="value">The option's value.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslSetOption")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslSetOption(nint handle, uint optionId, uint value);
+
+    /// <summary>
     /// Enables or disables the receiver, per <c>MgslEnableReceiver</c>. Disabling cancels a blocked <see cref="MgslRead"/>.
     /// </summary>
     /// <param name="handle">The device handle.</param>

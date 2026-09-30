@@ -19,7 +19,7 @@ internal sealed partial class MainWindow : Window
         EncodingComboBox.ItemsSource = Enum.GetValues<MicroGateEncoding>();
         EncodingComboBox.SelectedItem = MicroGateEncoding.Nrz;
         CrcComboBox.ItemsSource = Enum.GetValues<MicroGateCrc>();
-        CrcComboBox.SelectedItem = MicroGateCrc.Crc16Ccitt;
+        CrcComboBox.SelectedItem = MicroGateCrc.Crc32Ccitt;
         FrameListBox.ItemsSource = log;
 
         Loaded += async (_, _) => await RefreshPorts();
@@ -142,7 +142,7 @@ internal sealed partial class MainWindow : Window
         return new MicroGateMonitorOptions
         {
             Encoding = EncodingComboBox.SelectedItem is MicroGateEncoding encoding ? encoding : MicroGateEncoding.Nrz,
-            Crc = CrcComboBox.SelectedItem is MicroGateCrc crc ? crc : MicroGateCrc.Crc16Ccitt,
+            Crc = CrcComboBox.SelectedItem is MicroGateCrc crc ? crc : MicroGateCrc.Crc32Ccitt,
             HardwareAddressFilter = addressFilter,
         };
     }

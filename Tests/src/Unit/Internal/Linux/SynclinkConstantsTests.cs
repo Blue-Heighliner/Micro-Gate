@@ -6,6 +6,7 @@ public sealed class SynclinkConstantsTests
     public void RequestCodes_MatchKernelIoctlEncoding()
     {
         Assert.Equal((nuint)0x6D02, SynclinkConstants.SetTransmitIdle);
+        Assert.Equal((nuint)0x6D0A, SynclinkConstants.SetInterface);
         Assert.Equal((nuint)0x6D04, SynclinkConstants.EnableTransmitter);
         Assert.Equal((nuint)0x6D05, SynclinkConstants.EnableReceiver);
         Assert.Equal((nuint)0x5423, SynclinkConstants.SetLineDiscipline);

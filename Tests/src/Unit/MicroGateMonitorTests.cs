@@ -42,7 +42,7 @@ public sealed class MicroGateMonitorTests : IDisposable
 
         Assert.Equal(new MicroGateMonitorOptions(), captured);
         Assert.Equal(MicroGateEncoding.Nrz, captured!.Encoding);
-        Assert.Equal(MicroGateCrc.Crc16Ccitt, captured.Crc);
+        Assert.Equal(MicroGateCrc.Crc32Ccitt, captured.Crc);
         Assert.Null(captured.HardwareAddressFilter);
     }
 

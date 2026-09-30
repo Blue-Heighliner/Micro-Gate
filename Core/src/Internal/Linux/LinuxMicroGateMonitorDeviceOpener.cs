@@ -38,6 +38,8 @@ internal sealed class LinuxMicroGateMonitorDeviceOpener(ILinuxNative native) : I
     private void ConfigurePort(int fileDescriptor, string path, MicroGateMonitorOptions options)
     {
         Check(native.SelectHdlcLineDiscipline(fileDescriptor), "select the HDLC line discipline", path);
+        // Setting the interface is best effort: it needs privileges the user may lack, and a device that cannot switch is still usable as it is.
+        native.SetInterface(fileDescriptor, SynclinkConstants.InterfaceRs232);
 
         SynclinkParams parameters = new()
         {

@@ -34,6 +34,9 @@ internal sealed class WindowsMicroGateMonitorDeviceOpener(IWindowsNative native)
     /// </summary>
     private void ConfigurePort(nint handle, MicroGateMonitorOptions options)
     {
+        // Both options are best effort: setting the interface can need privileges the user lacks, and a device that cannot switch is still usable as it is.
+        native.SetOption(handle, MghdlcConstants.OptionInterface, MghdlcConstants.InterfaceRs232);
+        native.SetOption(handle, MghdlcConstants.OptionReceiveErrorMask, MghdlcConstants.OptionOn);
         MghdlcParams parameters = new()
         {
             Mode = MghdlcConstants.ModeHdlc,

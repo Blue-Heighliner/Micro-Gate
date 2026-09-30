@@ -26,6 +26,26 @@ internal static class MghdlcConstants
     public static readonly uint Disabled = 0;
 
     /// <summary>
+    /// The <c>MGSL_OPT_INTERFACE</c> option id for <c>MgslSetOption</c>, which selects the serial interface type.
+    /// </summary>
+    public static readonly uint OptionInterface = 6;
+
+    /// <summary>
+    /// The <c>MGSL_OPT_RX_ERROR_MASK</c> option id for <c>MgslSetOption</c>, which makes the driver silently discard HDLC frames received with errors. Without it <c>MgslRead</c> returns zero for each such frame, which is indistinguishable from a cancelled read.
+    /// </summary>
+    public static readonly uint OptionReceiveErrorMask = 8;
+
+    /// <summary>
+    /// The value that turns a boolean <c>MgslSetOption</c> option on.
+    /// </summary>
+    public static readonly uint OptionOn = 1;
+
+    /// <summary>
+    /// The <c>MGSL_INTERFACE_RS232</c> serial interface type for <see cref="OptionInterface"/>.
+    /// </summary>
+    public static readonly uint InterfaceRs232 = 1;
+
+    /// <summary>
     /// The <c>MgslOpenByName</c> success status.
     /// </summary>
     public static readonly uint Success = 0;
