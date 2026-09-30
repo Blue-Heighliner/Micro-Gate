@@ -24,7 +24,13 @@ IMicroGatePeerFactory factory = new MicroGatePeerFactory();
 IReadOnlyList<string> names = await ports.GetPorts();
 
 await using IMicroGatePeer peer = factory.Create();
-peer.Received.Subscribe(data => Console.WriteLine(System.Text.Encoding.UTF8.GetString(data.Span)));
+peer.Receiver = data =>
+{
+    using (data)
+    {
+        Console.WriteLine(System.Text.Encoding.UTF8.GetString(data.Memory.Span));
+    }
+};
 
 await peer.Start(names[0], address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());

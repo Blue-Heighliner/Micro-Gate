@@ -62,8 +62,8 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     {
         PayloadObserver atSecond = new();
         PayloadObserver atFirst = new();
-        second.Received.Subscribe(atSecond);
-        first.Received.Subscribe(atFirst);
+        second.Receiver = atSecond.Receive;
+        first.Receiver = atFirst.Receive;
         await ConnectBoth();
 
         for (int i = 0; i < 40; i++)
@@ -84,7 +84,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await using MicroGatePeer largeSecond = Create(secondSocket);
         MicroGatePeerOptions withMaxInfoField = requesting with { MaxInfoField = 4090 };
         PayloadObserver atSecond = new();
-        largeSecond.Received.Subscribe(atSecond);
+        largeSecond.Receiver = atSecond.Receive;
         Task listening = largeSecond.Start("second", 0x03, 0x01, passive with { MaxInfoField = 4090 }).AsTask();
         await large.Start("first", 0x01, 0x03, withMaxInfoField).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
@@ -100,7 +100,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     public async Task Send_PooledOwner_ArrivesAndIsDisposed()
     {
         PayloadObserver atSecond = new();
-        second.Received.Subscribe(atSecond);
+        second.Receiver = atSecond.Receive;
         await ConnectBoth();
         Mock<IMemoryOwner<byte>> owner = new();
         owner.SetupGet(x => x.Memory).Returns(new byte[] { 7, 8, 9 });
@@ -112,18 +112,15 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Dispose_RemotePeerDisconnectsAndCompletesStreams()
+    public async Task Dispose_RemotePeerDisconnectsAndCompletesTheStateStream()
     {
         TestObserver<MicroGatePeerState> states = new();
-        PayloadObserver payloads = new();
         second.StateChanged.Subscribe(states);
-        second.Received.Subscribe(payloads);
         await ConnectBoth();
 
         await first.DisposeAsync();
 
         await states.Completed.WaitAsync(timeout);
-        await payloads.Completed.WaitAsync(timeout);
         Assert.Equal([MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
     }
 
@@ -158,7 +155,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await using MicroGatePeer healthy = Create(secondSocket);
         MicroGatePeerOptions quick = requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) };
         PayloadObserver atHealthy = new();
-        healthy.Received.Subscribe(atHealthy);
+        healthy.Receiver = atHealthy.Receive;
         Task listening = healthy.Start("healthy", 0x03, 0x01, passive with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask();
         await lossy.Start("lossy", 0x01, 0x03, quick).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
@@ -178,7 +175,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await using MicroGatePeer lossy = Create(new DroppingMicroGateDevice(firstSocket, (_, index) => index == 1));
         await using MicroGatePeer healthy = Create(secondSocket);
         PayloadObserver atHealthy = new();
-        healthy.Received.Subscribe(atHealthy);
+        healthy.Receiver = atHealthy.Receive;
         Task listening = healthy.Start("healthy", 0x03, 0x01, passive).AsTask();
         await lossy.Start("lossy", 0x01, 0x03, requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
@@ -192,7 +189,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     public async Task Send_MoreThanTheWindowOverASlowReceiver_DeliversEverythingInOrder()
     {
         PayloadObserver atSecond = new();
-        second.Received.Subscribe(atSecond);
+        second.Receiver = atSecond.Receive;
         await ConnectBoth();
 
         Task[] sends = [.. Enumerable.Range(0, 100).Select(i => first.Send(new byte[] { (byte)i }).AsTask())];

@@ -70,8 +70,9 @@ internal sealed partial class MainWindow : Window
 
         IMicroGatePeer newPeer = peerFactory.Create();
         peer = newPeer;
-        subscriptions.Add(newPeer.Received.Subscribe(OnReceived));
+        newPeer.Receiver = OnReceived;
         subscriptions.Add(newPeer.StateChanged.Subscribe(state => OnStateChanged(newPeer, state)));
+        subscriptions.Add(newPeer.Exceptions.Subscribe(exception => Dispatcher.UIThread.Post(() => AppendLog($"Error: {exception.Message}"))));
 
         ConnectButton.IsEnabled = false;
 
@@ -141,9 +142,14 @@ internal sealed partial class MainWindow : Window
         await released.DisposeAsync();
     }
 
-    private void OnReceived(ReadOnlyMemory<byte> data)
+    private void OnReceived(IMemoryOwner<byte> data)
     {
-        string text = Encoding.UTF8.GetString(data.Span);
+        string text;
+        using (data)
+        {
+            text = Encoding.UTF8.GetString(data.Memory.Span);
+        }
+
         Dispatcher.UIThread.Post(() => AppendLog($"Received: {text}"));
     }
 

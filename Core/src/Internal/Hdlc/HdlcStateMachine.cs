@@ -7,7 +7,7 @@ namespace BlueHeighliner.MicroGate.Hdlc;
 /// <remarks>
 /// Not thread safe: callers serialize access.
 /// </remarks>
-internal interface IHdlcStateMachine
+internal interface IHdlcStateMachine : IDisposable
 {
     /// <summary>
     /// Gets the current connection state.
@@ -46,8 +46,16 @@ internal interface IHdlcStateMachine
     /// </summary>
     /// <param name="payload">The data to carry in the frame's information field.</param>
     /// <returns>The raw frame bytes to transmit.</returns>
-    /// <exception cref="InvalidOperationException">The state machine is not <see cref="HdlcConnectionState.Connected"/>, or <see cref="WindowSize"/> frames are already outstanding.</exception>
+    /// <exception cref="InvalidOperationException">The state machine is not <see cref="HdlcConnectionState.Connected"/>, has been disposed, or <see cref="WindowSize"/> frames are already outstanding.</exception>
     ReadOnlyMemory<byte> CreateInformation(ReadOnlyMemory<byte> payload);
+
+    /// <summary>
+    /// Creates a <see cref="HdlcFrameKind.Information"/> frame carrying the memory of <paramref name="payload"/>, addressed with the next send sequence number, and keeps it, without copying, until it is acknowledged. Ownership of <paramref name="payload"/> passes to the state machine only if the call succeeds; it is then disposed once the frame is acknowledged, discarded, or the state machine is reset or disposed.
+    /// </summary>
+    /// <param name="payload">The owner of the data to carry in the frame's information field.</param>
+    /// <returns>The raw frame bytes to transmit.</returns>
+    /// <exception cref="InvalidOperationException">The state machine is not <see cref="HdlcConnectionState.Connected"/>, has been disposed, or <see cref="WindowSize"/> frames are already outstanding.</exception>
+    ReadOnlyMemory<byte> CreateInformation(IMemoryOwner<byte> payload);
 
     /// <summary>
     /// Creates every unacknowledged information frame again, oldest first, carrying the current receive sequence number.
@@ -83,12 +91,13 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     private readonly byte testControl = 0xE3;
     private readonly byte[] unsupportedModeCommands = [0x83, 0xCF, 0x6F, 0x4F];
     private readonly byte[] ignoredCommands = [0x03, 0xAF];
-    private readonly Queue<(int Sequence, byte[] Payload)> outstanding = new();
+    private readonly Queue<(int Sequence, IMemoryOwner<byte> Payload, int Length)> outstanding = new();
     private int pendingConnectRequests;
     private int sendSequence;
     private int receiveSequence;
     private bool rejectSent;
     private bool peerBusy;
+    private bool disposed;
 
     /// <inheritdoc />
     public HdlcConnectionState State { get; private set; } = HdlcConnectionState.Disconnected;
@@ -125,26 +134,20 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     /// <inheritdoc />
     public ReadOnlyMemory<byte> CreateInformation(ReadOnlyMemory<byte> payload)
     {
-        if (State != HdlcConnectionState.Connected)
-        {
-            throw new InvalidOperationException($"Cannot create an information frame while the state machine is {State}.");
-        }
+        EnsureCanSend();
+        return Keep(new PooledBuffer(payload.Span), payload.Length);
+    }
 
-        if (outstanding.Count >= WindowSize)
-        {
-            throw new InvalidOperationException("Cannot create an information frame while the send window is full.");
-        }
-
-        byte[] kept = payload.ToArray();
-        outstanding.Enqueue((sendSequence, kept));
-        byte[] frame = CreateInformationFrame(sendSequence, kept);
-        sendSequence = (sendSequence + 1) % sequenceModulus;
-        return frame;
+    /// <inheritdoc />
+    public ReadOnlyMemory<byte> CreateInformation(IMemoryOwner<byte> payload)
+    {
+        EnsureCanSend();
+        return Keep(payload, payload.Memory.Length);
     }
 
     /// <inheritdoc />
     public IReadOnlyList<ReadOnlyMemory<byte>> CreateRetransmission() =>
-        [.. outstanding.Select(frame => (ReadOnlyMemory<byte>)CreateInformationFrame(frame.Sequence, frame.Payload))];
+        [.. outstanding.Select(frame => (ReadOnlyMemory<byte>)CreateInformationFrame(frame.Sequence, frame.Payload.Memory[..frame.Length]))];
 
     /// <inheritdoc />
     public void DiscardLastInformation()
@@ -154,14 +157,22 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             return;
         }
 
-        (int Sequence, byte[] Payload)[] kept = outstanding.ToArray();
+        (int Sequence, IMemoryOwner<byte> Payload, int Length)[] kept = outstanding.ToArray();
         outstanding.Clear();
-        foreach ((int Sequence, byte[] Payload) frame in kept[..^1])
+        foreach ((int Sequence, IMemoryOwner<byte> Payload, int Length) frame in kept[..^1])
         {
             outstanding.Enqueue(frame);
         }
 
+        kept[^1].Payload.Dispose();
         sendSequence = (sendSequence + sequenceModulus - 1) % sequenceModulus;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        disposed = true;
+        ReleaseOutstanding();
     }
 
     /// <inheritdoc />
@@ -373,33 +384,75 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 
         for (int i = 0; i < acknowledged; i++)
         {
-            outstanding.Dequeue();
+            outstanding.Dequeue().Payload.Dispose();
         }
 
         return acknowledged;
     }
 
-    private void Restart()
+    private void EnsureCanSend()
     {
+        if (disposed)
+        {
+            throw new InvalidOperationException("Cannot create an information frame after the state machine has been disposed.");
+        }
+
+        if (State != HdlcConnectionState.Connected)
+        {
+            throw new InvalidOperationException($"Cannot create an information frame while the state machine is {State}.");
+        }
+
+        if (outstanding.Count >= WindowSize)
+        {
+            throw new InvalidOperationException("Cannot create an information frame while the send window is full.");
+        }
+    }
+
+    private ReadOnlyMemory<byte> Keep(IMemoryOwner<byte> payload, int length)
+    {
+        outstanding.Enqueue((sendSequence, payload, length));
+        byte[] frame = CreateInformationFrame(sendSequence, payload.Memory[..length]);
+        sendSequence = (sendSequence + 1) % sequenceModulus;
+        return frame;
+    }
+
+    private void ReleaseOutstanding()
+    {
+        foreach ((int Sequence, IMemoryOwner<byte> Payload, int Length) frame in outstanding)
+        {
+            frame.Payload.Dispose();
+        }
+
         outstanding.Clear();
+    }
+
+    private void ResetSequences()
+    {
         sendSequence = 0;
         receiveSequence = 0;
         rejectSent = false;
         peerBusy = false;
     }
 
+    private void Restart()
+    {
+        ReleaseOutstanding();
+        ResetSequences();
+    }
+
     private void Renumber()
     {
-        (int Sequence, byte[] Payload)[] kept = outstanding.ToArray();
-        Restart();
-        foreach ((int Sequence, byte[] Payload) frame in kept)
+        (int Sequence, IMemoryOwner<byte> Payload, int Length)[] kept = outstanding.ToArray();
+        outstanding.Clear();
+        ResetSequences();
+        foreach ((int Sequence, IMemoryOwner<byte> Payload, int Length) frame in kept)
         {
-            outstanding.Enqueue((sendSequence, frame.Payload));
+            outstanding.Enqueue((sendSequence, frame.Payload, frame.Length));
             sendSequence++;
         }
     }
 
-    private byte[] CreateInformationFrame(int sequence, byte[] payload) =>
+    private byte[] CreateInformationFrame(int sequence, ReadOnlyMemory<byte> payload) =>
         new HdlcFrame
         {
             Address = RemoteAddress,

@@ -1,6 +1,12 @@
 namespace BlueHeighliner.MicroGate;
 
-internal sealed class PayloadObserver : TestObserver<byte[]>, IObserver<ReadOnlyMemory<byte>>
+internal sealed class PayloadObserver : TestObserver<byte[]>
 {
-    public void OnNext(ReadOnlyMemory<byte> value) => base.OnNext(value.ToArray());
+    public void Receive(IMemoryOwner<byte> data)
+    {
+        using (data)
+        {
+            OnNext(data.Memory.ToArray());
+        }
+    }
 }

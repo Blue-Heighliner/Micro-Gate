@@ -23,15 +23,7 @@ internal sealed class DeviceHarness : IDisposable
             });
         Device
             .Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>()))
-            .Callback((ReadOnlyMemory<byte> frame) =>
-            {
-                lock (written)
-                {
-                    written.Add(frame.ToArray());
-                }
-
-                writtenSignal.Release();
-            });
+            .Callback(Record);
         Device.Setup(x => x.DisableReceiver()).Callback(closed.Cancel);
         Opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>())).Returns(Device.Object);
     }
@@ -72,6 +64,16 @@ internal sealed class DeviceHarness : IDisposable
             ReceiveSequence = receiveSequence,
             Payload = payload,
         };
+
+    public void Record(ReadOnlyMemory<byte> frame)
+    {
+        lock (written)
+        {
+            written.Add(frame.ToArray());
+        }
+
+        writtenSignal.Release();
+    }
 
     public void Receive(HdlcFrame frame) => inbound.Add(frame.ToArray());
 

@@ -185,64 +185,231 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task Received_EveryObserverGetsTheFrameData()
+    public async Task Receiver_IsGivenTheFrameDataAndTheFrameIsAcknowledged()
     {
         await using MicroGatePeer peer = await harness.Connect();
-        PayloadObserver first = new();
-        PayloadObserver second = new();
-        peer.Received.Subscribe(first);
-        peer.Received.Subscribe(second);
+        PayloadObserver observer = new();
+        peer.Receiver = observer.Receive;
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1, 2, 3 }));
 
-        Assert.Equal(new byte[] { 1, 2, 3 }, await first.Next());
-        Assert.Equal(new byte[] { 1, 2, 3 }, await second.Next());
+        Assert.Equal(new byte[] { 1, 2, 3 }, await observer.Next());
         HdlcFrame acknowledgement = await harness.NextWritten(1);
         Assert.Equal(HdlcFrameKind.ReceiveReady, acknowledgement.Kind);
         Assert.Equal(1, acknowledgement.ReceiveSequence);
     }
 
     [Fact]
-    public async Task Received_DataStaysValidAfterLaterFramesArrive()
+    public async Task Receiver_MemoryStaysValidWhileTheDelegateIsRunningAndLaterFramesWait()
     {
         await using MicroGatePeer peer = await harness.Connect();
-        List<ReadOnlyMemory<byte>> kept = [];
-        TaskCompletionSource both = new();
-        peer.Received.Subscribe(new CallbackObserver<ReadOnlyMemory<byte>>(data =>
+        TaskCompletionSource release = new();
+        TaskCompletionSource firstStarted = new();
+        List<byte[]> seen = [];
+        peer.Receiver = data =>
         {
-            kept.Add(data);
-            if (kept.Count == 2)
+            if (seen.Count == 0)
             {
-                both.SetResult();
+                firstStarted.SetResult();
+                release.Task.Wait();
             }
-        }));
+
+            lock (seen)
+            {
+                seen.Add(data.Memory.ToArray());
+            }
+
+            data.Dispose();
+        };
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1, 1 }));
+        await firstStarted.Task.WaitAsync(timeout);
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 2, 2 }));
-        await both.Task.WaitAsync(timeout);
+        await Task.Delay(100);
+        lock (seen)
+        {
+            Assert.Empty(seen);
+        }
 
-        Assert.Equal(new byte[] { 1, 1 }, kept[0].ToArray());
-        Assert.Equal(new byte[] { 2, 2 }, kept[1].ToArray());
+        release.SetResult();
+        await Eventually(() =>
+        {
+            lock (seen)
+            {
+                return seen.Count == 2;
+            }
+        });
+
+        Assert.Equal(new byte[] { 1, 1 }, seen[0]);
+        Assert.Equal(new byte[] { 2, 2 }, seen[1]);
     }
 
     [Fact]
-    public async Task Received_WhenObserverThrows_IsUnsubscribedAndOthersKeepReceiving()
+    public async Task Receiver_OwnerOutlivesTheCallUntilTheDelegateDisposesIt()
     {
         await using MicroGatePeer peer = await harness.Connect();
-        int calls = 0;
-        peer.Received.Subscribe(new CallbackObserver<ReadOnlyMemory<byte>>(_ =>
+        List<IMemoryOwner<byte>> kept = [];
+        peer.Receiver = data =>
         {
-            Interlocked.Increment(ref calls);
-            throw new InvalidOperationException();
-        }));
+            lock (kept)
+            {
+                kept.Add(data);
+            }
+        };
+
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1, 1 }));
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 2, 2, 2 }));
+        await Eventually(() =>
+        {
+            lock (kept)
+            {
+                return kept.Count == 2;
+            }
+        });
+
+        Assert.Equal(new byte[] { 1, 1 }, kept[0].Memory.ToArray());
+        Assert.Equal(new byte[] { 2, 2, 2 }, kept[1].Memory.ToArray());
+        kept[0].Dispose();
+        Assert.Throws<ObjectDisposedException>(() => kept[0].Memory);
+        Assert.Equal(new byte[] { 2, 2, 2 }, kept[1].Memory.ToArray());
+        kept[1].Dispose();
+    }
+
+    [Fact]
+    public async Task Receiver_WhenTheDelegateThrows_ReportsItOnExceptionsAndKeepsTheConnection()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        TestObserver<Exception> exceptions = new();
+        peer.Exceptions.Subscribe(exceptions);
+        InvalidOperationException failure = new("receiver failed");
         PayloadObserver healthy = new();
-        peer.Received.Subscribe(healthy);
+        int calls = 0;
+        peer.Receiver = data =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                throw failure;
+            }
+
+            healthy.Receive(data);
+        };
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 4 }));
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 5 }));
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 2, new byte[] { 6 }));
 
-        Assert.Equal([new byte[] { 4 }, new byte[] { 5 }], await healthy.Next(2));
-        Assert.Equal(1, calls);
+        Assert.Same(failure, await exceptions.Next());
+        Assert.Equal([new byte[] { 5 }, new byte[] { 6 }], await healthy.Next(2));
+        Assert.True(peer.IsConnected);
+        Assert.Equal(MicroGatePeerState.Connected, peer.State);
+    }
+
+    [Fact]
+    public async Task Exceptions_WhenAStateObserverThrows_ReportsItAndTheConnectionCarriesOn()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        TestObserver<Exception> exceptions = new();
+        peer.Exceptions.Subscribe(exceptions);
+        InvalidOperationException failure = new("observer failed");
+        peer.StateChanged.Subscribe(new CallbackObserver<MicroGatePeerState>(_ => throw failure));
+
+        harness.Receive(harness.Peer(HdlcFrameKind.Disconnect));
+
+        Assert.Same(failure, await exceptions.Next());
+    }
+
+    [Fact]
+    public async Task Exceptions_WhenAFrameIsTooShortToParse_ReportsItAndKeepsReceiving()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        TestObserver<Exception> exceptions = new();
+        peer.Exceptions.Subscribe(exceptions);
+        PayloadObserver payloads = new();
+        peer.Receiver = payloads.Receive;
+
+        harness.Receive(new byte[] { 0x21 });
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 7 }));
+
+        Assert.IsType<HdlcFrameException>(await exceptions.Next());
+        Assert.Equal(new byte[] { 7 }, await payloads.Next());
+        Assert.True(peer.IsConnected);
+    }
+
+    [Fact]
+    public async Task Exceptions_CompletesTogetherWithTheStateStream()
+    {
+        MicroGatePeer peer = await harness.Connect();
+        TestObserver<Exception> exceptions = new();
+        peer.Exceptions.Subscribe(exceptions);
+
+        await peer.DisposeAsync();
+
+        await exceptions.Completed.WaitAsync(timeout);
+    }
+
+    [Fact]
+    public async Task Exceptions_ObserversRunOutsideThePeersLocks()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        TaskCompletionSource sent = new();
+        peer.Exceptions.Subscribe(new CallbackObserver<Exception>(_ =>
+        {
+            peer.Send(new byte[] { 1 }).AsTask().Wait();
+            sent.SetResult();
+        }));
+
+        harness.Receive(new byte[] { 0x21 });
+
+        await sent.Task.WaitAsync(timeout);
+    }
+
+    [Fact]
+    public async Task Receiver_CanBeReplacedWhileConnected()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        PayloadObserver first = new();
+        PayloadObserver second = new();
+        peer.Receiver = first.Receive;
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
+        Assert.Equal([new byte[] { 1 }], await first.Next(1));
+
+        peer.Receiver = second.Receive;
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 2 }));
+
+        Assert.Equal([new byte[] { 2 }], await second.Next(1));
+    }
+
+    [Fact]
+    public async Task Receiver_DeliversDataReceivedBeforeTheLinkEnded()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        TaskCompletionSource release = new();
+        PayloadObserver observer = new();
+        peer.Receiver = data =>
+        {
+            release.Task.Wait();
+            observer.Receive(data);
+        };
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 8 }));
+        harness.Receive(harness.Peer(HdlcFrameKind.DisconnectedMode, false));
+        await Eventually(() => peer.State == MicroGatePeerState.Disconnected);
+
+        release.SetResult();
+
+        Assert.Equal([new byte[] { 8 }], await observer.Next(1));
+    }
+
+    [Fact]
+    public async Task Receiver_WhenNotSet_DataIsAcknowledgedAndDiscarded()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 3 }));
+
+        HdlcFrame acknowledgement = await harness.NextWritten(1);
+        Assert.Equal(HdlcFrameKind.ReceiveReady, acknowledgement.Kind);
+        Assert.Equal(1, acknowledgement.ReceiveSequence);
+        Assert.Null(peer.Receiver);
     }
 
     [Fact]
@@ -250,7 +417,7 @@ public sealed class MicroGatePeerTests : IDisposable
     {
         await using MicroGatePeer peer = await harness.Connect();
         PayloadObserver observer = new();
-        peer.Received.Subscribe(observer);
+        peer.Receiver = observer.Receive;
 
         harness.Receive([0xFF]);
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 9 }));
@@ -285,15 +452,47 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task Send_Owner_WritesFrameAndDisposesOwner()
+    public async Task Send_Owner_WritesFrameWithoutCopyingAndDisposesOwnerOnceAcknowledged()
     {
         await using MicroGatePeer peer = await harness.Connect();
+        bool disposed = false;
         Mock<IMemoryOwner<byte>> owner = new();
         owner.SetupGet(x => x.Memory).Returns(new byte[] { 4, 4 });
+        owner.Setup(x => x.Dispose()).Callback(() => disposed = true);
 
         await peer.Send(owner.Object);
 
         Assert.Equal(new byte[] { 4, 4 }, (await harness.NextWritten(1)).Payload.ToArray());
+        Assert.False(disposed);
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, false, receiveSequence: 1));
+        await Eventually(() => disposed);
+        owner.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Send_Owner_WhenTheWriteFails_DisposesOwnerAndThrows()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
+        harness.Device.Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>())).Throws<IOException>();
+        Mock<IMemoryOwner<byte>> owner = new();
+        owner.SetupGet(x => x.Memory).Returns(new byte[] { 4, 4 });
+
+        await Assert.ThrowsAsync<IOException>(async () => await peer.Send(owner.Object));
+
+        owner.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Send_Owner_WhenThePeerEndsBeforeItIsAcknowledged_DisposesOwner()
+    {
+        MicroGatePeer peer = await harness.Connect();
+        Mock<IMemoryOwner<byte>> owner = new();
+        owner.SetupGet(x => x.Memory).Returns(new byte[] { 4, 4 });
+        await peer.Send(owner.Object);
+        owner.Verify(x => x.Dispose(), Times.Never);
+
+        await peer.DisposeAsync();
+
         owner.Verify(x => x.Dispose(), Times.Once);
     }
 
@@ -319,18 +518,15 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task Receive_PeerDisconnect_EmitsDisconnectedOnceCompletesStreamsAndAcknowledges()
+    public async Task Receive_PeerDisconnect_EmitsDisconnectedOnceCompletesTheStateStreamAndAcknowledges()
     {
         MicroGatePeer peer = await harness.Connect();
         TestObserver<MicroGatePeerState> states = new();
-        PayloadObserver payloads = new();
         peer.StateChanged.Subscribe(states);
-        peer.Received.Subscribe(payloads);
 
         harness.Receive(harness.Peer(HdlcFrameKind.Disconnect));
 
         await states.Completed.WaitAsync(timeout);
-        await payloads.Completed.WaitAsync(timeout);
         Assert.Equal([MicroGatePeerState.Disconnected], states.Seen);
         Assert.Equal(HdlcFrameKind.UnnumberedAcknowledge, (await harness.NextWritten(1)).Kind);
         Assert.False(peer.IsConnected);
@@ -352,18 +548,15 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task Subscribe_AfterDisconnect_CompletesImmediately()
+    public async Task Subscribe_AfterDisconnect_CompletesTheStateStreamImmediately()
     {
         MicroGatePeer peer = await harness.Connect();
         await peer.DisposeAsync();
         TestObserver<MicroGatePeerState> states = new();
-        PayloadObserver payloads = new();
 
         peer.StateChanged.Subscribe(states);
-        peer.Received.Subscribe(payloads);
 
         await states.Completed.WaitAsync(timeout);
-        await payloads.Completed.WaitAsync(timeout);
     }
 
     [Fact]
@@ -550,19 +743,16 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task ReceiveLoop_WhenResponseWriteFails_DisconnectsAndCompletesStreams()
+    public async Task ReceiveLoop_WhenResponseWriteFails_DisconnectsAndCompletesTheStateStream()
     {
         MicroGatePeer peer = await harness.Connect();
         TestObserver<MicroGatePeerState> states = new();
-        PayloadObserver payloads = new();
         peer.StateChanged.Subscribe(states);
-        peer.Received.Subscribe(payloads);
         harness.Device.Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>())).Throws<IOException>();
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
 
         await states.Completed.WaitAsync(timeout);
-        await payloads.Completed.WaitAsync(timeout);
         Assert.Equal([MicroGatePeerState.Disconnected], states.Seen);
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
         await peer.DisposeAsync();
@@ -626,15 +816,15 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task Dispose_FromReceivedObserver_SendsDisconnectAndClosesDeviceAfterLoopEnds()
+    public async Task Dispose_FromTheReceiver_SendsDisconnectAndClosesDeviceAfterLoopEnds()
     {
         MicroGatePeer peer = await harness.Connect();
         TaskCompletionSource disposedInCallback = new();
-        peer.Received.Subscribe(new CallbackObserver<ReadOnlyMemory<byte>>(_ =>
+        peer.Receiver = _ =>
         {
             peer.Dispose();
             disposedInCallback.TrySetResult();
-        }));
+        };
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
 
@@ -686,6 +876,50 @@ public sealed class MicroGatePeerTests : IDisposable
         HdlcFrame last = await harness.NextWritten(8);
         Assert.Equal(7, last.SendSequence);
         Assert.Equal(new byte[] { 7 }, last.Payload.ToArray());
+    }
+
+    [Fact]
+    public async Task Retransmit_TimerStartsWhenTheFrameHasBeenWrittenNotWhenItWasCreated()
+    {
+        MicroGatePeerOptions slow = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(400) };
+        MicroGatePeer peer = harness.CreatePeer();
+        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, slow).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await starting.WaitAsync(timeout);
+        int slowWrites = 0;
+        harness.Device.Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>())).Callback<ReadOnlyMemory<byte>>(frame =>
+        {
+            if (HdlcFrame.Parse(frame).Kind == HdlcFrameKind.Information && Interlocked.Increment(ref slowWrites) == 1)
+            {
+                Thread.Sleep(600);
+            }
+
+            harness.Record(frame);
+        });
+
+        await peer.Send(new byte[] { 9 });
+        int afterFirstWrite = harness.Written.Count;
+        await Task.Delay(250);
+
+        Assert.Equal(afterFirstWrite, harness.Written.Count);
+        await Eventually(() => harness.Written.Count > afterFirstWrite);
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Send_Owner_AfterThePeerHasEnded_ThrowsAndDisposesOwner()
+    {
+        MicroGatePeer peer = await harness.Connect();
+        harness.Receive(harness.Peer(HdlcFrameKind.Disconnect));
+        await Eventually(() => peer.State == MicroGatePeerState.Disconnected);
+        Mock<IMemoryOwner<byte>> owner = new();
+        owner.SetupGet(x => x.Memory).Returns(new byte[] { 1 });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await peer.Send(owner.Object));
+
+        owner.Verify(x => x.Dispose(), Times.Once);
+        await peer.DisposeAsync();
     }
 
     [Fact]
@@ -858,7 +1092,7 @@ public sealed class MicroGatePeerTests : IDisposable
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
         await harness.NextWritten(1);
         PayloadObserver late = new();
-        peer.Received.Subscribe(late);
+        peer.Receiver = late.Receive;
 
         harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 2 }));
 
@@ -969,9 +1203,7 @@ public sealed class MicroGatePeerTests : IDisposable
         MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(40), MaxRetransmissions = 2 };
         MicroGatePeer peer = harness.CreatePeer();
         TestObserver<MicroGatePeerState> states = new();
-        PayloadObserver payloads = new();
         peer.StateChanged.Subscribe(states);
-        peer.Received.Subscribe(payloads);
         Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
         await harness.NextWritten(0);
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
@@ -979,7 +1211,6 @@ public sealed class MicroGatePeerTests : IDisposable
 
         await peer.Send(new byte[] { 1 });
         await states.Completed.WaitAsync(timeout);
-        await payloads.Completed.WaitAsync(timeout);
 
         Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
         Assert.Equal([MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
@@ -1153,46 +1384,91 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
-    public async Task Received_ItemsAndCompletionAreNeverDeliveredConcurrently()
+    public async Task Receiver_BlockingOnASendThatNeedsAnAcknowledgement_DoesNotStallReceiving()
     {
-        MicroGatePeerOptions quick = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(30), MaxRetransmissions = 1 };
-        MicroGatePeer peer = harness.CreatePeer();
-        Task starting = peer.Start("port", harness.Address, harness.RemoteAddress, quick).AsTask();
-        await harness.NextWritten(0);
-        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
-        await starting.WaitAsync(timeout);
+        await using MicroGatePeer peer = await harness.Connect();
+        for (int i = 0; i < 7; i++)
+        {
+            await peer.Send(new byte[] { (byte)i });
+        }
+
+        TaskCompletionSource sent = new();
+        peer.Receiver = _ =>
+        {
+            peer.Send(new byte[] { 99 }).AsTask().Wait();
+            sent.SetResult();
+        };
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
+        await Task.Delay(100);
+        Assert.False(sent.Task.IsCompleted);
+
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, false, receiveSequence: 7));
+
+        await sent.Task.WaitAsync(timeout);
+        Assert.Contains(harness.Written, frame => HdlcFrame.Parse(frame).Kind == HdlcFrameKind.Information && HdlcFrame.Parse(frame).Payload.ToArray().SequenceEqual(new byte[] { 99 }));
+    }
+
+    [Fact]
+    public async Task Receiver_CallsAreNeverOverlappedAndKeepTheirOrder()
+    {
+        await using MicroGatePeer peer = await harness.Connect();
         int inside = 0;
         bool overlapped = false;
-        TaskCompletionSource completed = new();
-        peer.Received.Subscribe(
-            _ =>
+        List<byte> order = [];
+        peer.Receiver = data =>
+        {
+            if (Interlocked.Increment(ref inside) > 1)
             {
-                if (Interlocked.Increment(ref inside) > 1)
-                {
-                    overlapped = true;
-                }
+                overlapped = true;
+            }
 
-                Thread.Sleep(20);
-                Interlocked.Decrement(ref inside);
-            },
-            () =>
+            Thread.Sleep(10);
+            lock (order)
             {
-                if (Volatile.Read(ref inside) > 0)
-                {
-                    overlapped = true;
-                }
+                order.Add(data.Memory.Span[0]);
+            }
 
-                completed.TrySetResult();
-            });
+            Interlocked.Decrement(ref inside);
+            data.Dispose();
+        };
 
-        await peer.Send(new byte[] { 1 });
         for (int i = 0; i < 10; i++)
         {
             harness.Receive(harness.Peer(HdlcFrameKind.Information, false, i % 8, new byte[] { (byte)i }));
         }
 
-        await completed.Task.WaitAsync(timeout);
+        await Eventually(() =>
+        {
+            lock (order)
+            {
+                return order.Count == 10;
+            }
+        });
+
         Assert.False(overlapped);
-        await peer.DisposeAsync();
+        Assert.Equal(Enumerable.Range(0, 10).Select(i => (byte)i), order);
+    }
+
+    [Fact]
+    public async Task Receiver_AfterDisposal_IsNotCalledAgain()
+    {
+        MicroGatePeer peer = await harness.Connect();
+        TaskCompletionSource release = new();
+        int calls = 0;
+        peer.Receiver = _ =>
+        {
+            Interlocked.Increment(ref calls);
+            release.Task.Wait();
+        };
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
+        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 1, new byte[] { 2 }));
+        await Eventually(() => Volatile.Read(ref calls) == 1);
+
+        Task disposing = peer.DisposeAsync().AsTask();
+        release.SetResult();
+        await disposing.WaitAsync(timeout);
+        await Task.Delay(100);
+
+        Assert.Equal(1, calls);
     }
 }

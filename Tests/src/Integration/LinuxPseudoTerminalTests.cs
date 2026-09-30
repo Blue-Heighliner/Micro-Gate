@@ -68,7 +68,7 @@ public sealed class LinuxPseudoTerminalTests
         IMicroGatePeer connection = new MicroGatePeer(new LinuxMicroGateDeviceOpener(new TolerantLinuxNative(new LinuxNative())), new Mock<IMicroGateDeviceOpener>().Object);
         PayloadObserver received = new();
         TestObserver<MicroGatePeerState> states = new();
-        connection.Received.Subscribe(received);
+        connection.Receiver = received.Receive;
         connection.StateChanged.Subscribe(states);
 
         await connection.Start(terminal.SlavePath, 0x33, 0x34, options).AsTask().WaitAsync(timeout);

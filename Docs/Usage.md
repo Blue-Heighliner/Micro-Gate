@@ -38,12 +38,19 @@ using BlueHeighliner.MicroGate;
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 
 peer.StateChanged.Subscribe(state => Console.WriteLine($"State: {state}"));
-peer.Received.Subscribe(data => Console.WriteLine(Encoding.UTF8.GetString(data.Span)));
+peer.Exceptions.Subscribe(exception => Console.WriteLine($"Error: {exception.Message}"));
+peer.Receiver = data =>
+{
+    using (data)
+    {
+        Console.WriteLine(Encoding.UTF8.GetString(data.Memory.Span));
+    }
+};
 
 await peer.Start("ttySLG0", address: 0x01, remoteAddress: 0x03);
 ```
 
-Subscribing first means no state change and no early frame is missed. The data an observer receives is backed by an array allocated for that frame, so it can be kept or passed to another thread, but it is shared between observers and must not be modified.
+Setting the receiver and subscribing first means no state change and no early frame is missed. `Receiver` is a delegate given each frame's data, in order, one call at a time, as an `IMemoryOwner<byte>` whose memory is exactly the data. The delegate owns it from then on: dispose it as soon as you have finished with the data, which returns the memory to the pool as early as possible, or keep it or hand it to another thread until then. The peer never disposes it after the call, so one that is never disposed is only garbage collected. The delegate runs on a task of the peer's own, so it may block, for example on `peer.Send`, without stalling the acknowledgement of received frames. Frames are acknowledged as they arrive whether or not the delegate has finished, so a delegate slower than the line lets data queue up in memory.
 
 ## Wait for the remote peer instead of sending requests
 

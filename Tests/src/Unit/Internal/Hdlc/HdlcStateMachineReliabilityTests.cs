@@ -322,4 +322,106 @@ public sealed class HdlcStateMachineReliabilityTests
 
         public int GetHashCode(byte[] obj) => obj.Length;
     }
+
+    private Mock<IMemoryOwner<byte>> Owner(params byte[] data)
+    {
+        Mock<IMemoryOwner<byte>> owner = new();
+        owner.SetupGet(x => x.Memory).Returns(data);
+        return owner;
+    }
+
+    [Fact]
+    public void CreateInformation_WithOwner_CarriesItsMemoryAndKeepsItUntilAcknowledged()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        Mock<IMemoryOwner<byte>> owner = Owner(7, 8);
+
+        HdlcFrame frame = HdlcFrame.Parse(local.CreateInformation(owner.Object));
+
+        Assert.Equal(new byte[] { 7, 8 }, frame.Payload.ToArray());
+        owner.Verify(x => x.Dispose(), Times.Never);
+        local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 1));
+        owner.Verify(x => x.Dispose(), Times.Once);
+        Assert.Equal(0, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void CreateInformation_WithOwner_WhenTheWindowIsFull_ThrowsWithoutTakingTheOwner()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        for (int i = 0; i < local.WindowSize; i++)
+        {
+            local.CreateInformation(new byte[] { 1 });
+        }
+
+        Mock<IMemoryOwner<byte>> owner = Owner(1);
+
+        Assert.Throws<InvalidOperationException>(() => local.CreateInformation(owner.Object));
+        owner.Verify(x => x.Dispose(), Times.Never);
+    }
+
+    [Fact]
+    public void DiscardLastInformation_DisposesTheOwnerOfTheFrameItTakesBack()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        Mock<IMemoryOwner<byte>> owner = Owner(3);
+        local.CreateInformation(owner.Object);
+
+        local.DiscardLastInformation();
+
+        owner.Verify(x => x.Dispose(), Times.Once);
+        Assert.Equal(0, local.OutstandingCount);
+    }
+
+    [Fact]
+    public void Receive_SabmWhileConnected_RenumbersOutstandingFramesWithoutDisposingTheirOwners()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        Mock<IMemoryOwner<byte>> owner = Owner(3);
+        local.CreateInformation(owner.Object);
+
+        local.Receive(Frame(HdlcFrameKind.SetAsynchronousBalancedMode));
+
+        owner.Verify(x => x.Dispose(), Times.Never);
+        Assert.Equal(1, local.OutstandingCount);
+        Assert.Equal(new byte[] { 3 }, HdlcFrame.Parse(local.CreateRetransmission()[0]).Payload.ToArray());
+        local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 1));
+        owner.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public void CreateConnect_WhileFramesAreOutstanding_DisposesTheirOwners()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        Mock<IMemoryOwner<byte>> owner = Owner(3);
+        local.CreateInformation(owner.Object);
+
+        local.CreateConnect();
+
+        owner.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public void Dispose_DisposesTheOwnersOfOutstandingFrames()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        Mock<IMemoryOwner<byte>> owner = Owner(3);
+        local.CreateInformation(owner.Object);
+
+        local.Dispose();
+
+        owner.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public void CreateInformation_AfterDispose_ThrowsWithoutTakingTheOwner()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair();
+        local.Dispose();
+        Mock<IMemoryOwner<byte>> owner = Owner(1);
+
+        Assert.Throws<InvalidOperationException>(() => local.CreateInformation(owner.Object));
+        Assert.Throws<InvalidOperationException>(() => local.CreateInformation(new byte[] { 1 }));
+        owner.Verify(x => x.Dispose(), Times.Never);
+    }
 }

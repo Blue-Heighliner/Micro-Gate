@@ -42,7 +42,7 @@ public sealed record MicroGatePeerOptions
     public bool DisablePollFinalBit { get; init; } = true;
 
     /// <summary>
-    /// Gets the largest payload, in bytes, that may be sent in one information frame, from 1 to 4090 (the MicroGate drivers discard received frames larger than 4096 bytes, and a frame also carries an address, a control field, and a frame check sequence). Defaults to 1500. Must not exceed the largest frame the remote station can receive, which discards larger ones without telling this station; a smaller value is always safe.
+    /// Gets the largest payload, in bytes, that may be sent in one information frame, from 1 to 4090 (the MicroGate drivers discard received frames larger than 4096 bytes, and a frame also carries an address, a control field, and a frame check sequence). Defaults to 1500. Must not exceed the largest frame the remote station can receive, which discards larger ones without telling this station; a smaller value is always safe. Devices can deliver less than the driver's 4096-byte limit: the SyncLink USB devices this was tested on delivered frames of up to 3176 bytes of payload and silently lost larger ones, so a link that includes such a device needs a value no higher than that.
     /// </summary>
     public int MaxInfoField { get; init; } = 1500;
 
@@ -55,7 +55,7 @@ public sealed record MicroGatePeerOptions
     public TimeSpan? RetryInterval { get; init; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Gets how long sent data may go unacknowledged before every unacknowledged information frame is sent again, or <see langword="null"/> to only send frames again when the remote peer rejects them. Defaults to one second. Not negotiated, so any value interoperates, but one shorter than the time to transmit the outstanding frames and receive an acknowledgement sends duplicates the remote station must discard.
+    /// Gets how long sent data may go unacknowledged before every unacknowledged information frame is sent again, or <see langword="null"/> to only send frames again when the remote peer rejects them. Defaults to one second. Not negotiated, so any value interoperates. The time counts from when a frame has finished being transmitted, and not while a frame is being transmitted or received, so it only needs to cover the remote station's time to answer; one shorter than that sends duplicates the remote station must discard.
     /// </summary>
     /// <remarks>
     /// A frame lost on the line is normally recovered when the next frame arrives and the remote peer rejects the gap. The interval covers the case where nothing follows the lost frame, or the rejection itself is lost.
