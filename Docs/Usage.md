@@ -1,6 +1,6 @@
 # Usage
 
-Runnable examples of `MicroGatePortSource`, `MicroGatePeer`, and `MicroGateMonitor` in different situations. `Received` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
+Runnable examples of `MicroGatePortSource` and `MicroGatePeer` in different situations. `Monitored` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
 
 ## List the available ports
 
@@ -23,11 +23,12 @@ On Linux these are `ttySLG*` (PCI/PCIe) and MicroGate `ttyUSB*` devices; on Wind
 using BlueHeighliner.MicroGate;
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", address: 0x01, remoteAddress: 0x03);
+await peer.Start("ttySLG0");
+await peer.Connect(address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());
 ```
 
-Every peer needs two different HDLC addresses: its own (`address`), which the remote peer sends its commands to, and the remote peer's (`remoteAddress`), which this peer sends its commands to. The remote peer must be started with them the other way round, here `0x03` and `0x01`. With no options the default settings apply: NRZ encoding, CRC-32-CCITT, and flag idle.
+`Start` opens the device and `Connect` forms the connection. Connecting needs two different HDLC addresses: the peer's own (`address`), which the remote peer sends its commands to, and the remote peer's (`remoteAddress`), which this peer sends its commands to. The remote peer must connect with them the other way round, here `0x03` and `0x01`. With no options the default settings apply: NRZ encoding, CRC-32-CCITT, and flag idle.
 
 ## Subscribe before connecting
 
@@ -47,7 +48,8 @@ peer.Receiver = data =>
     }
 };
 
-await peer.Start("ttySLG0", address: 0x01, remoteAddress: 0x03);
+await peer.Start("ttySLG0");
+await peer.Connect(address: 0x01, remoteAddress: 0x03);
 ```
 
 Setting the receiver and subscribing first means no state change and no early frame is missed. `Receiver` is a delegate given each frame's data, in order, one call at a time, as an `IMemoryOwner<byte>` whose memory is exactly the data. The delegate owns it from then on: dispose it as soon as you have finished with the data, which returns the memory to the pool as early as possible, or keep it or hand it to another thread until then. The peer never disposes it after the call, so one that is never disposed is only garbage collected. The delegate runs on a task of the peer's own, so it may block, for example on `peer.Send`, without stalling the acknowledgement of received frames. Frames are acknowledged as they arrive whether or not the delegate has finished, so a delegate slower than the line lets data queue up in memory.
@@ -62,7 +64,8 @@ MicroGatePeerOptions options = new() { RetryInterval = null };
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 
 using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
-await peer.Start("ttySLG0", 0x01, 0x03, options, timeout.Token);
+await peer.Start("ttySLG0", options, timeout.Token);
+await peer.Connect(0x01, 0x03, timeout.Token);
 ```
 
 With a `null` retry interval this side never sends a connection request and completes when the remote peer's request arrives. By default both sides send requests every second until answered, so either may be started first.
@@ -75,7 +78,8 @@ using BlueHeighliner.MicroGate;
 MicroGatePeerOptions options = new() { RetryInterval = TimeSpan.FromMilliseconds(250) };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", 0x01, 0x03, options);
+await peer.Start("ttySLG0", options);
+await peer.Connect(0x01, 0x03);
 ```
 
 ## Tune retransmission
@@ -86,7 +90,8 @@ using BlueHeighliner.MicroGate;
 MicroGatePeerOptions options = new() { RetransmitInterval = TimeSpan.FromMilliseconds(250) };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", 0x01, 0x03, options);
+await peer.Start("ttySLG0", options);
+await peer.Connect(0x01, 0x03);
 
 byte[] message = new byte[peer.MaxPayloadSize];
 await peer.Send(message);
@@ -112,7 +117,8 @@ using BlueHeighliner.MicroGate;
 MicroGatePeerOptions options = new() { DisablePollFinalBit = false };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", 0x01, 0x03, options);
+await peer.Start("ttySLG0", options);
+await peer.Connect(0x01, 0x03);
 ```
 
 `DisablePollFinalBit` is `true` by default, so every frame the station sends has the poll/final bit at 0, including acknowledgements to a peer frame that had it set. Set it to `false` for a remote peer that expects the bit to reflect the frame's actual role.
@@ -133,7 +139,8 @@ MicroGatePeerOptions options = new()
 };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
-await peer.Start("ttySLG0", 0x01, 0x03, options);
+await peer.Start("ttySLG0", options);
+await peer.Connect(0x01, 0x03);
 ```
 
 Both peers must agree on encoding, CRC, and idle pattern.
@@ -156,19 +163,19 @@ A peer can be started only once, so a service that needs links takes the `IMicro
 ```csharp
 using BlueHeighliner.MicroGate;
 
-await using IMicroGateMonitor monitor = new MicroGateMonitorFactory().Create();
+await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 
-monitor.Received.Subscribe(frame => Console.WriteLine($"{frame.Kind} from 0x{frame.Address:X2}, {frame.Raw.Length} bytes"));
+peer.Monitored.Subscribe(frame => Console.WriteLine($"{frame.Kind} from 0x{frame.Address:X2}, {frame.Raw.Length} bytes"));
 
-await monitor.Start("ttySLG0");
+await peer.Start("ttySLG0", new MicroGatePeerOptions { EnableMonitor = true });
 ```
 
-`monitor` never writes to the device: it reports every frame it sees, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their information frames. Options are the receive side physical layer settings of a peer's (`Encoding`, `Crc`, `ReceiveClockSource`, `PhaseLockedLoopDivisor`, `ClockSpeed`) plus `HardwareAddressFilter`; there is nothing HDLC-layer to configure, since a monitor never forms a connection.
+A peer that is only started, and never connected, forms no HDLC connection and sends nothing: its transmitter stays disabled. With `EnableMonitor` it reports every frame it receives on `Monitored`, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their information frames. Without it, received frames are not even parsed. Only the physical layer settings matter for a monitor (`Link`: `Encoding`, `Crc`, `ReceiveClockSource`, `PhaseLockedLoopDivisor`, `ClockSpeed`); the HDLC-layer settings only apply once `Connect` is called.
 
-## Handle a frame the monitor could not decode
+## Handle a frame that could not be decoded
 
 ```csharp
-monitor.Received.Subscribe(frame =>
+peer.Monitored.Subscribe(frame =>
 {
     if (frame.Kind == MicroGateFrameKind.Malformed)
     {
@@ -181,3 +188,21 @@ monitor.Received.Subscribe(frame =>
 ```
 
 A frame that is too short, or whose control byte does not match a recognized kind, is still reported rather than dropped, with `Raw` holding its bytes as received.
+
+## Relay frames between two ports
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+MicroGatePeerOptions options = new() { EnableMonitor = true };
+await using IMicroGatePeer first = new MicroGatePeerFactory().Create();
+await using IMicroGatePeer second = new MicroGatePeerFactory().Create();
+
+first.Monitored.Subscribe(frame => second.Forward(frame.Raw));
+second.Monitored.Subscribe(frame => first.Forward(frame.Raw));
+
+await first.Start("ttyUSB0", options);
+await second.Start("ttyUSB1", options);
+```
+
+Each started peer forwards what the other receives, so two stations on either side of the relay talk as if it were not there, while the relay still sees every frame. A real relay should queue the frames and forward them from its own task rather than from the observer, which runs on the thread reading the device. `Forward` is only allowed while the peer has not been connected.

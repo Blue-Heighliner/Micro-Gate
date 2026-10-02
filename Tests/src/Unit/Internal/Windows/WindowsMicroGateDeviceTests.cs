@@ -77,6 +77,25 @@ public sealed class WindowsMicroGateDeviceTests
     }
 
     [Fact]
+    public void EnableTransmitter_EnablesTransmitterOnHandle()
+    {
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.EnableTransmitter();
+
+        native.Verify(x => x.EnableTransmitter(9, true), Times.Once);
+    }
+
+    [Fact]
+    public void EnableTransmitter_WhenItFails_Throws()
+    {
+        native.Setup(x => x.EnableTransmitter(9, true)).Returns(5u);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        Assert.Throws<IOException>(device.EnableTransmitter);
+    }
+
+    [Fact]
     public void DisableTransmitter_AlsoCancelsBlockedWrite()
     {
         WindowsMicroGateDevice device = new(native.Object, 9);

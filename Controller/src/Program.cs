@@ -14,6 +14,8 @@ internal static class Program
     {
         ServiceCollection services = new();
         services.AddConventionServices(typeof(IMicroGatePeerFactory).Assembly);
+        services.AddTransient<IFrameDescriber, FrameDescriber>();
+        services.AddTransient<ILogSerializer, LogSerializer>();
         services.AddTransient<MainWindow>();
         App.Services = services.BuildServiceProvider();
 

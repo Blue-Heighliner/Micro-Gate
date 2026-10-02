@@ -60,7 +60,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
             Times.Once);
         native.Verify(x => x.SetIdleMode(9, 6u), Times.Once);
         native.Verify(x => x.EnableReceiver(9, true), Times.Once);
-        native.Verify(x => x.EnableTransmitter(9, true), Times.Once);
+        native.Verify(x => x.EnableTransmitter(It.IsAny<nint>(), It.IsAny<bool>()), Times.Never);
         native.Verify(x => x.Close(9), Times.Once);
     }
 
@@ -127,7 +127,6 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     [InlineData("set the port parameters")]
     [InlineData("set the idle pattern")]
     [InlineData("enable the receiver")]
-    [InlineData("enable the transmitter")]
     public void Open_WhenAConfigurationStepFails_ThrowsIoExceptionAndClosesHandle(string step)
     {
         switch (step)
@@ -138,11 +137,8 @@ public sealed class WindowsMicroGateDeviceOpenerTests
             case "set the idle pattern":
                 native.Setup(x => x.SetIdleMode(9, It.IsAny<uint>())).Returns(5u);
                 break;
-            case "enable the receiver":
-                native.Setup(x => x.EnableReceiver(9, true)).Returns(5u);
-                break;
             default:
-                native.Setup(x => x.EnableTransmitter(9, true)).Returns(5u);
+                native.Setup(x => x.EnableReceiver(9, true)).Returns(5u);
                 break;
         }
 

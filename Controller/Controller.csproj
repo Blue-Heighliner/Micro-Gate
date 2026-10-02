@@ -47,6 +47,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="BlueHeighliner.MicroGate.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj">
       <AdditionalProperties Condition="'$(RuntimeIdentifier)' != ''">DebugType=embedded</AdditionalProperties>
     </ProjectReference>

@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// Identifies the kind of a frame observed by <see cref="IMicroGateMonitor"/>, per the HDLC control field encoding described at
+/// Identifies the kind of a frame received on the device and reported by <see cref="IMicroGatePeer.Monitored"/>, per the HDLC control field encoding described at
 /// https://en.wikipedia.org/wiki/High-Level_Data_Link_Control. Covers both information (data) frames and the unnumbered and supervisory frames MicroGate stations use to manage the asynchronous balanced mode connection.
 /// </summary>
 public enum MicroGateFrameKind

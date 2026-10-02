@@ -130,4 +130,23 @@ public sealed class LinuxMicroGateDeviceTests
 
         native.Verify(x => x.EnableTransmitter(7, false), Times.Once);
     }
+
+    [Fact]
+    public void EnableTransmitter_EnablesTransmitterOnDescriptor()
+    {
+        LinuxMicroGateDevice device = new(native.Object, 7);
+
+        device.EnableTransmitter();
+
+        native.Verify(x => x.EnableTransmitter(7, true), Times.Once);
+    }
+
+    [Fact]
+    public void EnableTransmitter_WhenItFails_Throws()
+    {
+        native.Setup(x => x.EnableTransmitter(7, true)).Returns(-1);
+        LinuxMicroGateDevice device = new(native.Object, 7);
+
+        Assert.Throws<IOException>(device.EnableTransmitter);
+    }
 }

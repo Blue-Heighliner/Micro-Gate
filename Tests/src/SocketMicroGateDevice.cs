@@ -62,6 +62,10 @@ internal sealed class SocketMicroGateDevice(Socket socket) : IMicroGateDevice
         }
     }
 
+    public void EnableTransmitter()
+    {
+    }
+
     public void DisableTransmitter()
     {
         try

@@ -32,7 +32,8 @@ peer.Receiver = data =>
     }
 };
 
-await peer.Start(names[0], address: 0x01, remoteAddress: 0x03);
+await peer.Start(names[0]);
+await peer.Connect(address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());
 ```
 
@@ -45,16 +46,8 @@ await peer.Send("Hello"u8.ToArray());
 | [`Docs/Architecture.md`](Docs/Architecture.md) | High-level design decisions. |
 | [`Docs/Project.md`](Docs/Project.md) | This repository's scripts, publishing, and CI. |
 | [`Docs/MicroGate/`](Docs/MicroGate) | The vendor serial API documentation and driver headers (`synclink.h`, `Mghdlc.h`) for Linux and Windows that the native layers are written against. |
-| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, peer lifecycle, monitor lifecycle, Linux and Windows transports). |
-
-## Sample
-
-`Sample/` is an Avalonia desktop application demonstrating the library: enumerate ports, connect, and send and receive messages. Run it with `dotnet run --project Sample`.
+| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, peer lifecycle, Linux and Windows transports). |
 
 ## Controller
 
-`Controller/` is an Avalonia desktop application that opens a MicroGate port as a peer: connect, browse received data as expandable byte tables (ASCII or 0-255 values per cell), and compose data to send in the same kind of table, typing ASCII characters or raw byte values and inserting control characters. Run it with `dotnet run --project Controller`, or publish it as a single self-contained `SerialController` executable the same way as Monitor (see [`Docs/Project.md`](Docs/Project.md)).
-
-## Monitor
-
-`Monitor/` is an Avalonia desktop application that passively observes a MicroGate device: pick a port and watch every frame on it, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their data. It never writes to the device. The recorded log can be saved to a file and reloaded later. Run it with `dotnet run --project Monitor`, or publish it as a single self-contained executable (see [`Docs/Project.md`](Docs/Project.md)).
+`Controller/` is an Avalonia desktop application with three modes. **Peer** opens one port and forms an HDLC connection: browse received data as expandable byte tables (ASCII or 0-255 values per cell) and compose data to send in the same kind of table, typing ASCII characters or raw byte values and inserting control characters. **Monitor** opens one port and only observes the frames received on it, forming no connection and sending nothing. **Passthrough** opens two ports and relays every frame between them as if it were not there, logging the frames in both directions. Run it with `dotnet run --project Controller`, or publish it as a single self-contained `SerialController` executable (see [`Docs/Project.md`](Docs/Project.md)).

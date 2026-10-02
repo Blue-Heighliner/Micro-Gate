@@ -24,6 +24,16 @@ internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle)
     }
 
     /// <inheritdoc />
+    public void EnableTransmitter()
+    {
+        uint status = native.EnableTransmitter(handle, true);
+        if (status != MghdlcConstants.Success)
+        {
+            throw new IOException("Failed to enable the transmitter.", new Win32Exception((int)status));
+        }
+    }
+
+    /// <inheritdoc />
     public void DisableReceiver()
     {
         Volatile.Write(ref receiverDisabled, 1);

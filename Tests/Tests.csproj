@@ -24,5 +24,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Controller\Controller.csproj" />
   </ItemGroup>
 </Project>

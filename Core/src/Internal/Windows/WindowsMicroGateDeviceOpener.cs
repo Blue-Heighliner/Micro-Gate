@@ -49,7 +49,6 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMic
         Check(native.SetParams(handle, parameters), "set the port parameters");
         Check(native.SetIdleMode(handle, MapIdlePattern(options.IdlePattern)), "set the idle pattern");
         Check(native.EnableReceiver(handle, true), "enable the receiver");
-        Check(native.EnableTransmitter(handle, true), "enable the transmitter");
     }
 
     private void Check(uint status, string step)

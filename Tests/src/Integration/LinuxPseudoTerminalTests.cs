@@ -71,7 +71,7 @@ public sealed class LinuxPseudoTerminalTests
         connection.Receiver = received.Receive;
         connection.StateChanged.Subscribe(states);
 
-        await connection.Start(terminal.SlavePath, 0x33, 0x34, options).AsTask().WaitAsync(timeout);
+        await connection.StartAndConnect(terminal.SlavePath, 0x33, 0x34, options).AsTask().WaitAsync(timeout);
 
         Assert.True(connection.IsConnected);
 
@@ -97,6 +97,6 @@ public sealed class LinuxPseudoTerminalTests
         await peerLoop.WaitAsync(timeout);
         terminal.CloseMaster();
         await dispose.WaitAsync(timeout);
-        Assert.Equal([MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
+        Assert.Equal([MicroGatePeerState.Ready, MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
     }
 }

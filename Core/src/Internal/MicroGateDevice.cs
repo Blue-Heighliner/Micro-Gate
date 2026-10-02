@@ -20,6 +20,12 @@ internal interface IMicroGateDevice : IDisposable
     void Write(ReadOnlyMemory<byte> frame);
 
     /// <summary>
+    /// Enables the transmitter, which a device opens without so that it stays passive on the line until it first has something to send.
+    /// </summary>
+    /// <exception cref="IOException">The transmitter could not be enabled.</exception>
+    void EnableTransmitter();
+
+    /// <summary>
     /// Disables the receiver, which cancels any blocked <see cref="Read"/>.
     /// </summary>
     void DisableReceiver();

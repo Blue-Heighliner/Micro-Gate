@@ -45,6 +45,15 @@ internal sealed class LinuxMicroGateDevice(ILinuxNative native, int fileDescript
     }
 
     /// <inheritdoc />
+    public void EnableTransmitter()
+    {
+        if (native.EnableTransmitter(fileDescriptor, true) < 0)
+        {
+            throw new IOException("Failed to enable the transmitter.", new Win32Exception(Marshal.GetLastPInvokeError()));
+        }
+    }
+
+    /// <inheritdoc />
     public void DisableReceiver()
     {
         Volatile.Write(ref receiverDisabled, 1);

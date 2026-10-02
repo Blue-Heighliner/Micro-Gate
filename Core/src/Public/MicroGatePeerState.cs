@@ -6,12 +6,17 @@ namespace BlueHeighliner.MicroGate;
 public enum MicroGatePeerState
 {
     /// <summary>
-    /// The peer has been created but <see cref="IMicroGatePeer.Start"/> has not been called.
+    /// The peer has been created but <see cref="IMicroGatePeer.Start"/> has not completed.
     /// </summary>
     Idle,
 
     /// <summary>
-    /// <see cref="IMicroGatePeer.Start"/> has been called and the link with the remote peer is not yet established.
+    /// <see cref="IMicroGatePeer.Start"/> has completed: the device is open and being read, but no connection is being formed.
+    /// </summary>
+    Ready,
+
+    /// <summary>
+    /// <see cref="IMicroGatePeer.Connect"/> has been called and the link with the remote peer is not yet established.
     /// </summary>
     Connecting,
 

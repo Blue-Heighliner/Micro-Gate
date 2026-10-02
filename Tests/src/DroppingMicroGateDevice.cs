@@ -20,6 +20,8 @@ internal sealed class DroppingMicroGateDevice(IMicroGateDevice inner, Func<HdlcF
 
     public void DisableReceiver() => inner.DisableReceiver();
 
+    public void EnableTransmitter() => inner.EnableTransmitter();
+
     public void DisableTransmitter() => inner.DisableTransmitter();
 
     public void Dispose() => inner.Dispose();

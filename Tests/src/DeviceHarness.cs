@@ -96,7 +96,7 @@ internal sealed class DeviceHarness : IDisposable
     public async Task<MicroGatePeer> Connect()
     {
         MicroGatePeer peer = CreatePeer();
-        Task connecting = peer.Start("port", Address, RemoteAddress, Options).AsTask();
+        Task connecting = peer.StartAndConnect("port", Address, RemoteAddress, Options).AsTask();
         await NextWritten(0);
         Receive(Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await connecting.WaitAsync(TimeSpan.FromSeconds(5));
@@ -106,7 +106,7 @@ internal sealed class DeviceHarness : IDisposable
     public async Task<MicroGatePeer> Listen()
     {
         MicroGatePeer peer = CreatePeer();
-        Task listening = peer.Start("port", Address, RemoteAddress, Options with { RetryInterval = null }).AsTask();
+        Task listening = peer.StartAndConnect("port", Address, RemoteAddress, Options with { RetryInterval = null }).AsTask();
         Receive(Peer(HdlcFrameKind.SetAsynchronousBalancedMode));
         await listening.WaitAsync(TimeSpan.FromSeconds(5));
         return peer;

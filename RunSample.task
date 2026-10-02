@@ -1,2 +1,0 @@
-script Run Sample
-    run dotnet run --project Sample/Sample.csproj

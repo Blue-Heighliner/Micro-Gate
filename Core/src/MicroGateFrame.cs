@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// A single frame observed by <see cref="IMicroGateMonitor"/>, decoded as far as its bytes allow.
+/// A single frame received on the device and reported by <see cref="IMicroGatePeer.Monitored"/>, decoded as far as its bytes allow.
 /// </summary>
 public sealed record MicroGateFrame
 {

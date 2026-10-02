@@ -63,7 +63,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
             Times.Once);
         native.Verify(x => x.SetTransmitIdle(7, 3), Times.Once);
         native.Verify(x => x.EnableReceiver(7, true), Times.Once);
-        native.Verify(x => x.EnableTransmitter(7, true), Times.Once);
+        native.Verify(x => x.EnableTransmitter(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
         native.Verify(x => x.ClearNonBlocking(7), Times.Once);
         native.Verify(x => x.Close(7), Times.Once);
     }
@@ -131,7 +131,6 @@ public sealed class LinuxMicroGateDeviceOpenerTests
     [InlineData("set the port parameters")]
     [InlineData("set the idle pattern")]
     [InlineData("enable the receiver")]
-    [InlineData("enable the transmitter")]
     [InlineData("make the device blocking")]
     public void Open_WhenAConfigurationStepFails_ThrowsIoExceptionAndClosesDescriptor(string step)
     {
@@ -148,9 +147,6 @@ public sealed class LinuxMicroGateDeviceOpenerTests
                 break;
             case "enable the receiver":
                 native.Setup(x => x.EnableReceiver(7, true)).Returns(-1);
-                break;
-            case "enable the transmitter":
-                native.Setup(x => x.EnableTransmitter(7, true)).Returns(-1);
                 break;
             default:
                 native.Setup(x => x.ClearNonBlocking(7)).Returns(-1);

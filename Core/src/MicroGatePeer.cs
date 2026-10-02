@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// One end of an HDLC asynchronous balanced mode link over a MicroGate SyncLink device. A peer is created first, so observers can subscribe before the link exists, and then started with the port and options to use. It is single use: once <see cref="MicroGatePeerState.Disconnected"/> it cannot be started again.
+/// One end of an HDLC asynchronous balanced mode link over a MicroGate SyncLink device. A peer is created first, so observers can subscribe before the device is open, then started with the port and options to use, which readies the device (and, when <see cref="MicroGatePeerOptions.EnableMonitor"/> is set, reports every frame received on <see cref="Monitored"/>) without forming a connection. <see cref="Connect"/> then forms the HDLC connection, or <see cref="Forward"/> relays raw frames. It is single use: once <see cref="MicroGatePeerState.Disconnected"/> it cannot be started again.
 /// </summary>
 public interface IMicroGatePeer : IDisposable, IAsyncDisposable
 {
@@ -19,12 +19,20 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     IObservable<MicroGatePeerState> StateChanged { get; }
 
     /// <summary>
-    /// Gets a stream of the exceptions that occur without breaking the connection, so the peer carries on after each: an exception thrown by the <see cref="Receiver"/> delegate or by a <see cref="StateChanged"/> observer, and a received frame too short to parse, which is dropped. The stream completes together with <see cref="StateChanged"/>.
+    /// Gets a stream of the exceptions that occur without breaking the connection, so the peer carries on after each: an exception thrown by the <see cref="Receiver"/> delegate or by a <see cref="StateChanged"/> or <see cref="Monitored"/> observer, and a received frame too short to parse, which is dropped. The stream completes together with <see cref="StateChanged"/>.
     /// </summary>
     /// <remarks>
     /// The stream is hot: an exception that occurs while nothing is subscribed is lost, so subscribe before calling <see cref="Start"/>. Exceptions are delivered one at a time, in order, and never while the peer holds a lock, together with the state changes. An exception thrown by an observer of this stream itself is ignored, since there is nowhere left to report it. Failures that do break the connection are not reported here: they end the connection, which <see cref="StateChanged"/> shows.
     /// </remarks>
     IObservable<Exception> Exceptions { get; }
+
+    /// <summary>
+    /// Gets a stream of every frame received on the device, in the order received, parsed but not acted on: it includes the SABM, UA, DISC, DM, FRMR, RR, RNR, and REJ frames two stations use to manage their connection, those addressed to other stations, and frames that could not be parsed. Only pushed while <see cref="MicroGatePeerOptions.EnableMonitor"/> is <see langword="true"/>; when it is not, received frames are not even parsed. The stream completes together with <see cref="StateChanged"/>.
+    /// </summary>
+    /// <remarks>
+    /// The stream is hot: a frame received while nothing is subscribed is discarded, so subscribe before calling <see cref="Start"/>. Frames are delivered one at a time, in order, on the thread reading the device and never while the peer holds a lock, together with the state changes, so an observer should not block for long. The monitored frames are those received, not those this peer sends. An exception thrown by an observer is reported on <see cref="Exceptions"/>.
+    /// </remarks>
+    IObservable<MicroGateFrame> Monitored { get; }
 
     /// <summary>
     /// Gets the current state of the peer.
@@ -37,30 +45,55 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     bool IsConnected { get; }
 
     /// <summary>
-    /// Gets the largest payload, in bytes, that can be sent in one frame. Reflects <see cref="MicroGatePeerOptions.MaxInfoField"/> from the most recent <see cref="Start"/>, or its default before the peer has been started.
+    /// Gets the largest payload, in bytes, that can be sent in one frame. Reflects <see cref="MicroGatePeerOptions.MaxInfoField"/> from <see cref="Start"/>, or its default before the peer has been started.
     /// </summary>
     int MaxPayloadSize { get; }
 
     /// <summary>
-    /// Opens the device for the specified port and establishes the link with the remote peer, completing once it is up. The peer sends connection requests at <see cref="MicroGatePeerOptions.RetryInterval"/> (none if that is <see langword="null"/>) and also accepts a request from the remote peer, so the two sides need no fixed initiator.
+    /// Opens and readies the device for the specified port, completing once it is open. The peer is then <see cref="MicroGatePeerState.Ready"/>: it reads frames from the device and, when <see cref="MicroGatePeerOptions.EnableMonitor"/> is set, publishes them on <see cref="Monitored"/>, but it forms no HDLC connection and sends nothing. The device's transmitter stays disabled, so the peer is passive on the line, until <see cref="Connect"/> or <see cref="Forward"/> first needs it.
     /// </summary>
     /// <param name="portName">The name of the serial port the device is attached to.</param>
-    /// <param name="address">The HDLC address of this station: carried by every response it sends and expected on every command it receives. Must match the address the remote station sends its commands to.</param>
-    /// <param name="remoteAddress">The HDLC address of the remote station: carried by every command this station sends and expected on every response it receives. Must match the remote station's own address, and differ from <paramref name="address"/>. ADCCP and HDLC identify the sender of a response and the receiver of a command through it, so a link always needs two different addresses.</param>
     /// <param name="options">The device and HDLC settings to apply, or <see langword="null"/> to use the defaults.</param>
     /// <param name="cancellation">A token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Connected"/>.</returns>
-    /// <exception cref="ArgumentException"><paramref name="address"/> and <paramref name="remoteAddress"/> are the same.</exception>
+    /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Ready"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGatePeerOptions.RetryInterval"/> or <see cref="MicroGatePeerOptions.RetransmitInterval"/> is zero, negative, or longer than <see cref="int.MaxValue"/> milliseconds, <see cref="MicroGatePeerOptions.MaxRetransmissions"/> is zero or negative, <see cref="MicroGatePeerOptions.TransmitWindow"/> is outside 1 to 7, <see cref="MicroGatePeerOptions.MaxInfoField"/> is outside 1 to 4090, or <see cref="MicroGateLinkOptions.ClockSpeed"/> is zero or negative.</exception>
     /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     /// <exception cref="InvalidOperationException">The peer has already been started or has been disposed.</exception>
-    /// <exception cref="IOException">The device could not be opened, or it closed before a connection was established.</exception>
-    /// <exception cref="ObjectDisposedException">The peer was disposed before the connection was established.</exception>
+    /// <exception cref="IOException">The device could not be opened.</exception>
+    /// <exception cref="ObjectDisposedException">The peer was disposed before the device finished opening.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellation"/> was canceled.</exception>
     /// <remarks>
     /// An invalid argument or unsupported platform leaves the peer <see cref="MicroGatePeerState.Idle"/>; any failure after that disposes the peer, leaving it <see cref="MicroGatePeerState.Disconnected"/>.
     /// </remarks>
-    ValueTask Start(string portName, byte address, byte remoteAddress, MicroGatePeerOptions? options = null, CancellationToken cancellation = default);
+    ValueTask Start(string portName, MicroGatePeerOptions? options = null, CancellationToken cancellation = default);
+
+    /// <summary>
+    /// Forms the HDLC connection with the remote peer, completing once it is up. The peer becomes <see cref="MicroGatePeerState.Connecting"/>, enables the device's transmitter, sends connection requests at <see cref="MicroGatePeerOptions.RetryInterval"/> (none if that is <see langword="null"/>) and also accepts a request from the remote peer, so the two sides need no fixed initiator.
+    /// </summary>
+    /// <param name="address">The HDLC address of this station: carried by every response it sends and expected on every command it receives. Must match the address the remote station sends its commands to.</param>
+    /// <param name="remoteAddress">The HDLC address of the remote station: carried by every command this station sends and expected on every response it receives. Must match the remote station's own address, and differ from <paramref name="address"/>. ADCCP and HDLC identify the sender of a response and the receiver of a command through it, so a link always needs two different addresses.</param>
+    /// <param name="cancellation">A token that can be used to cancel the operation.</param>
+    /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Connected"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="address"/> and <paramref name="remoteAddress"/> are the same. The peer stays <see cref="MicroGatePeerState.Ready"/>.</exception>
+    /// <exception cref="InvalidOperationException">The peer is not <see cref="MicroGatePeerState.Ready"/>: it has not been started, has already been established, or has been disposed.</exception>
+    /// <exception cref="IOException">The device closed or failed before a connection was established.</exception>
+    /// <exception cref="ObjectDisposedException">The peer was disposed before the connection was established.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellation"/> was canceled.</exception>
+    /// <remarks>
+    /// Any failure after the arguments are accepted disposes the peer, leaving it <see cref="MicroGatePeerState.Disconnected"/>.
+    /// </remarks>
+    ValueTask Connect(byte address, byte remoteAddress, CancellationToken cancellation = default);
+
+    /// <summary>
+    /// Transmits a raw frame on the device unchanged and without involving the HDLC connection, for relaying frames received on another device, such as those of a <see cref="Monitored"/> peer. Enables the device's transmitter if it is not yet.
+    /// </summary>
+    /// <param name="frame">The frame to transmit, exactly as <see cref="MicroGateFrame.Raw"/> reports a received one: the address, control, and data bytes, without the frame check sequence, which the device adds. Must stay valid until the call completes.</param>
+    /// <param name="cancellation">A token that can be used to cancel the operation.</param>
+    /// <returns>A <see cref="ValueTask"/> that completes once the frame has been handed to the device.</returns>
+    /// <exception cref="InvalidOperationException">The peer is not <see cref="MicroGatePeerState.Ready"/>: it has not been started, has been established (frames of its own connection must not be mixed with relayed ones), or has been disposed.</exception>
+    /// <exception cref="IOException">The frame could not be written to the device.</exception>
+    ValueTask Forward(ReadOnlyMemory<byte> frame, CancellationToken cancellation = default);
+
 
     /// <summary>
     /// Sends data to the remote peer as one HDLC information frame. Frames are numbered and kept until the remote peer acknowledges them, and are sent again if it rejects them or does not answer, so data arrives in order and without gaps while the peer stays connected. Only a limited number of frames may be unacknowledged at once; further sends wait for an acknowledgement.
@@ -114,6 +147,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         this.shutdownTimeout = shutdownTimeout ?? TimeSpan.FromSeconds(5);
         StateChanged = Isolate(stateChanged, Report);
         Exceptions = Isolate(exceptions, static _ => { });
+        Monitored = Isolate(monitored, Report);
         connectionEstablished.Task.ContinueWith(static task => task.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
     }
 
@@ -123,6 +157,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private readonly Channel<IMemoryOwner<byte>> delivery = Channel.CreateUnbounded<IMemoryOwner<byte>>();
     private readonly Subject<MicroGatePeerState> stateChanged = new();
     private readonly Subject<Exception> exceptions = new();
+    private readonly Subject<MicroGateFrame> monitored = new();
     private readonly Queue<Exception> pendingExceptions = new();
     private readonly Queue<Action> notifications = new();
     private readonly Lock stateLock = new();
@@ -150,6 +185,8 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private int retransmitAttempts;
     private int notifyingThreadId;
     private int inboundPending;
+    private bool started;
+    private bool transmitterEnabled;
     private bool finished;
     private bool disposed;
 
@@ -165,6 +202,9 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
     /// <inheritdoc />
     public IObservable<Exception> Exceptions { get; }
+
+    /// <inheritdoc />
+    public IObservable<MicroGateFrame> Monitored { get; }
 
     /// <inheritdoc />
     public MicroGatePeerState State
@@ -184,34 +224,25 @@ public sealed class MicroGatePeer : IMicroGatePeer
     /// <inheritdoc />
     public int MaxPayloadSize => options.MaxInfoField;
 
-    private IHdlcStateMachine Machine => stateMachine ?? throw new InvalidOperationException("The peer has not been started.");
+    private IHdlcStateMachine Machine => stateMachine ?? throw new InvalidOperationException("The peer has not been established.");
 
     /// <inheritdoc />
-    public async ValueTask Start(string portName, byte address, byte remoteAddress, MicroGatePeerOptions? options = null, CancellationToken cancellation = default)
+    public async ValueTask Start(string portName, MicroGatePeerOptions? options = null, CancellationToken cancellation = default)
     {
-        if (address == remoteAddress)
-        {
-            throw new ArgumentException("The address and the remote address must be different.", nameof(remoteAddress));
-        }
-
         options ??= new();
         ValidateOptions(options);
         IMicroGateDeviceOpener selectedOpener = SelectOpener();
 
         lock (stateLock)
         {
-            if (state != MicroGatePeerState.Idle || disposed)
+            if (started || disposed)
             {
                 throw new InvalidOperationException("The peer has already been started or has been disposed.");
             }
 
+            started = true;
             this.options = options;
-            stateMachine = new HdlcStateMachine(options, address, remoteAddress);
-            sendWindow = new SemaphoreSlim(stateMachine.WindowSize, stateMachine.WindowSize);
-            SetState(MicroGatePeerState.Connecting);
         }
-
-        Notify();
 
         try
         {
@@ -230,26 +261,15 @@ public sealed class MicroGatePeer : IMicroGatePeer
                 deliveryStarted = true;
                 deliveryTask = Task.Run(Deliver);
                 retransmitTask = options.RetransmitInterval is null ? Task.CompletedTask : Task.Run(Retransmit);
+                SetState(MicroGatePeerState.Ready);
             }
 
+            Notify();
             cancellation.ThrowIfCancellationRequested();
-            await Establish(cancellation).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException and not ObjectDisposedException)
         {
-            bool disposedElsewhere;
-            lock (stateLock)
-            {
-                disposedElsewhere = disposed;
-            }
-
-            await DisposeAsync().ConfigureAwait(false);
-
-            if (disposedElsewhere)
-            {
-                throw new ObjectDisposedException(nameof(MicroGatePeer), exception);
-            }
-
+            await DisposeAfterFailure(exception).ConfigureAwait(false);
             throw;
         }
         catch
@@ -257,6 +277,72 @@ public sealed class MicroGatePeer : IMicroGatePeer
             await DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask Connect(byte address, byte remoteAddress, CancellationToken cancellation = default)
+    {
+        if (address == remoteAddress)
+        {
+            throw new ArgumentException("The address and the remote address must be different.", nameof(remoteAddress));
+        }
+
+        lock (stateLock)
+        {
+            if (state == MicroGatePeerState.Disconnected && !disposed)
+            {
+                throw new IOException("The device closed before a connection was established.");
+            }
+
+            if (state != MicroGatePeerState.Ready || disposed)
+            {
+                throw new InvalidOperationException("The peer must be started, and not yet established or disposed, to establish a connection.");
+            }
+
+            HdlcStateMachine machine = new(options, address, remoteAddress);
+            sendWindow = new SemaphoreSlim(machine.WindowSize, machine.WindowSize);
+            Volatile.Write(ref stateMachine, machine);
+            SetState(MicroGatePeerState.Connecting);
+        }
+
+        Notify();
+
+        try
+        {
+            EnableTransmitter();
+            cancellation.ThrowIfCancellationRequested();
+            await RequestConnection(cancellation).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not ObjectDisposedException)
+        {
+            await DisposeAfterFailure(exception).ConfigureAwait(false);
+            throw;
+        }
+        catch
+        {
+            await DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask Forward(ReadOnlyMemory<byte> frame, CancellationToken cancellation = default)
+    {
+        lock (stateLock)
+        {
+            if (state != MicroGatePeerState.Ready || disposed)
+            {
+                throw new InvalidOperationException("The peer must be started, and not established or disposed, to forward frames.");
+            }
+        }
+
+        await Task.Run(
+            () =>
+            {
+                EnableTransmitter();
+                WriteFrame(() => frame);
+            },
+            cancellation).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -321,7 +407,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
         if (opened is not null)
         {
-            if (Protocol(() => Machine.State) == HdlcConnectionState.Connected)
+            if (Protocol(() => stateMachine?.State) == HdlcConnectionState.Connected)
             {
                 await SendDisconnect(opened).ConfigureAwait(false);
             }
@@ -401,7 +487,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         return machine;
     }
 
-    private async Task Establish(CancellationToken cancellation)
+    private async Task RequestConnection(CancellationToken cancellation)
     {
         while (true)
         {
@@ -417,6 +503,34 @@ public sealed class MicroGatePeer : IMicroGatePeer
             }
             catch (TimeoutException)
             {
+            }
+        }
+    }
+
+    private async Task DisposeAfterFailure(Exception exception)
+    {
+        bool disposedElsewhere;
+        lock (stateLock)
+        {
+            disposedElsewhere = disposed;
+        }
+
+        await DisposeAsync().ConfigureAwait(false);
+
+        if (disposedElsewhere)
+        {
+            throw new ObjectDisposedException(nameof(MicroGatePeer), exception);
+        }
+    }
+
+    private void EnableTransmitter()
+    {
+        lock (writeLock)
+        {
+            if (!transmitterEnabled)
+            {
+                device!.EnableTransmitter();
+                transmitterEnabled = true;
             }
         }
     }
@@ -608,6 +722,17 @@ public sealed class MicroGatePeer : IMicroGatePeer
                     break;
                 }
 
+                if (options.EnableMonitor)
+                {
+                    PublishMonitored(buffer.AsSpan(0, bytesRead));
+                    Notify();
+                }
+
+                if (Volatile.Read(ref stateMachine) is null)
+                {
+                    continue;
+                }
+
                 Volatile.Write(ref inboundPending, 1);
                 HdlcReceiveResult? result;
                 try
@@ -667,6 +792,70 @@ public sealed class MicroGatePeer : IMicroGatePeer
         connectionEstablished.TrySetException(new IOException(failure is null ? "The device closed before a connection was established." : "The device failed.", failure));
         Finish();
     }
+
+    private void PublishMonitored(ReadOnlySpan<byte> raw)
+    {
+        if (!monitored.HasObservers)
+        {
+            return;
+        }
+
+        MicroGateFrame frame = ParseFrame(raw);
+        lock (stateLock)
+        {
+            if (!finished)
+            {
+                notifications.Enqueue(() => monitored.OnNext(frame));
+            }
+        }
+    }
+
+    private MicroGateFrame ParseFrame(ReadOnlySpan<byte> raw)
+    {
+        byte[] copy = raw.ToArray();
+
+        try
+        {
+            HdlcFrame frame = HdlcFrame.Parse(copy);
+            return new MicroGateFrame
+            {
+                Timestamp = DateTimeOffset.Now,
+                Address = frame.Address,
+                Kind = ToFrameKind(frame.Kind),
+                PollFinal = frame.PollFinal,
+                SendSequence = frame.Kind == HdlcFrameKind.Information ? frame.SendSequence : null,
+                ReceiveSequence = frame.Kind is HdlcFrameKind.Information or HdlcFrameKind.ReceiveReady or HdlcFrameKind.ReceiveNotReady or HdlcFrameKind.Reject ? frame.ReceiveSequence : null,
+                Payload = frame.Payload,
+                Raw = copy,
+            };
+        }
+        catch (HdlcFrameException exception)
+        {
+            return new MicroGateFrame
+            {
+                Timestamp = DateTimeOffset.Now,
+                Address = copy.Length > 0 ? copy[0] : (byte)0,
+                Kind = MicroGateFrameKind.Malformed,
+                PollFinal = false,
+                Raw = copy,
+                ErrorMessage = exception.Message,
+            };
+        }
+    }
+
+    private MicroGateFrameKind ToFrameKind(HdlcFrameKind kind) => kind switch
+    {
+        HdlcFrameKind.Information => MicroGateFrameKind.Information,
+        HdlcFrameKind.ReceiveReady => MicroGateFrameKind.ReceiveReady,
+        HdlcFrameKind.ReceiveNotReady => MicroGateFrameKind.ReceiveNotReady,
+        HdlcFrameKind.Reject => MicroGateFrameKind.Reject,
+        HdlcFrameKind.SetAsynchronousBalancedMode => MicroGateFrameKind.SetAsynchronousBalancedMode,
+        HdlcFrameKind.Disconnect => MicroGateFrameKind.Disconnect,
+        HdlcFrameKind.UnnumberedAcknowledge => MicroGateFrameKind.UnnumberedAcknowledge,
+        HdlcFrameKind.DisconnectedMode => MicroGateFrameKind.DisconnectedMode,
+        HdlcFrameKind.FrameReject => MicroGateFrameKind.FrameReject,
+        _ => MicroGateFrameKind.Malformed,
+    };
 
     private HdlcReceiveResult? Process(ReadOnlyMemory<byte> frame)
     {
@@ -865,6 +1054,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
     private void CompleteStreams()
     {
+        monitored.OnCompleted();
         stateChanged.OnCompleted();
         PublishExceptions();
         exceptions.OnCompleted();

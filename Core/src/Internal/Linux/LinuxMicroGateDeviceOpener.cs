@@ -53,7 +53,6 @@ internal sealed class LinuxMicroGateDeviceOpener(ILinuxNative native) : IMicroGa
         Check(native.SetParams(fileDescriptor, parameters), "set the port parameters", path);
         Check(native.SetTransmitIdle(fileDescriptor, MapIdlePattern(options.IdlePattern)), "set the idle pattern", path);
         Check(native.EnableReceiver(fileDescriptor, true), "enable the receiver", path);
-        Check(native.EnableTransmitter(fileDescriptor, true), "enable the transmitter", path);
         Check(native.ClearNonBlocking(fileDescriptor), "make the device blocking", path);
     }
 

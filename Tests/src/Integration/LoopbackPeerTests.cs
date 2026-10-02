@@ -38,7 +38,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await using MicroGatePeer right = Create(secondDevice);
         MicroGatePeerOptions fast = requesting with { RetryInterval = TimeSpan.FromMilliseconds(20) };
 
-        await Task.WhenAll(left.Start("left", 0x01, 0x03, fast).AsTask(), right.Start("right", 0x03, 0x01, fast).AsTask()).WaitAsync(timeout);
+        await Task.WhenAll(left.StartAndConnect("left", 0x01, 0x03, fast).AsTask(), right.StartAndConnect("right", 0x03, 0x01, fast).AsTask()).WaitAsync(timeout);
 
         Assert.True(left.IsConnected);
         Assert.True(right.IsConnected);
@@ -47,10 +47,10 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     [Fact]
     public async Task Start_WhenRemoteStartsLate_Connects()
     {
-        Task starting = first.Start("first", 0x01, 0x03, requesting).AsTask();
+        Task starting = first.StartAndConnect("first", 0x01, 0x03, requesting).AsTask();
         await Task.Delay(500);
 
-        await second.Start("second", 0x03, 0x01, passive).AsTask().WaitAsync(timeout);
+        await second.StartAndConnect("second", 0x03, 0x01, passive).AsTask().WaitAsync(timeout);
         await starting.WaitAsync(timeout);
 
         Assert.True(first.IsConnected);
@@ -85,8 +85,8 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         MicroGatePeerOptions withMaxInfoField = requesting with { MaxInfoField = 4090 };
         PayloadObserver atSecond = new();
         largeSecond.Receiver = atSecond.Receive;
-        Task listening = largeSecond.Start("second", 0x03, 0x01, passive with { MaxInfoField = 4090 }).AsTask();
-        await large.Start("first", 0x01, 0x03, withMaxInfoField).AsTask().WaitAsync(timeout);
+        Task listening = largeSecond.StartAndConnect("second", 0x03, 0x01, passive with { MaxInfoField = 4090 }).AsTask();
+        await large.StartAndConnect("first", 0x01, 0x03, withMaxInfoField).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
         byte[] payload = new byte[4090];
         new Random(1).NextBytes(payload);
@@ -121,7 +121,7 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await first.DisposeAsync();
 
         await states.Completed.WaitAsync(timeout);
-        Assert.Equal([MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
+        Assert.Equal([MicroGatePeerState.Ready, MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
     }
 
     [Fact]
@@ -142,8 +142,8 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
 
     private async Task ConnectBoth()
     {
-        Task listening = second.Start("second", 0x03, 0x01, passive).AsTask();
-        await first.Start("first", 0x01, 0x03, requesting).AsTask().WaitAsync(timeout);
+        Task listening = second.StartAndConnect("second", 0x03, 0x01, passive).AsTask();
+        await first.StartAndConnect("first", 0x01, 0x03, requesting).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
     }
 
@@ -156,8 +156,8 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         MicroGatePeerOptions quick = requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) };
         PayloadObserver atHealthy = new();
         healthy.Receiver = atHealthy.Receive;
-        Task listening = healthy.Start("healthy", 0x03, 0x01, passive with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask();
-        await lossy.Start("lossy", 0x01, 0x03, quick).AsTask().WaitAsync(timeout);
+        Task listening = healthy.StartAndConnect("healthy", 0x03, 0x01, passive with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask();
+        await lossy.StartAndConnect("lossy", 0x01, 0x03, quick).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
 
         for (int i = 0; i < 40; i++)
@@ -176,8 +176,8 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await using MicroGatePeer healthy = Create(secondSocket);
         PayloadObserver atHealthy = new();
         healthy.Receiver = atHealthy.Receive;
-        Task listening = healthy.Start("healthy", 0x03, 0x01, passive).AsTask();
-        await lossy.Start("lossy", 0x01, 0x03, requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask().WaitAsync(timeout);
+        Task listening = healthy.StartAndConnect("healthy", 0x03, 0x01, passive).AsTask();
+        await lossy.StartAndConnect("lossy", 0x01, 0x03, requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask().WaitAsync(timeout);
         await listening.WaitAsync(timeout);
 
         await lossy.Send(new byte[] { 42 });

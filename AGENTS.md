@@ -37,9 +37,9 @@
 - Put new unit tests (no real I/O against external dependencies) in `Tests/src/Unit/`; integration tests (real I/O) in `Tests/src/Integration/`. Put shared test infrastructure directly under `Tests/src/`. Use xUnit; mock dependencies with Moq.
 - Do not use the em dash character anywhere (code, comments, docs); use a plain hyphen.
 
-## Sample (Avalonia)
+## Avalonia apps
 
-- `Sample/` is a demo application outside the published library; it follows the same coding rules and resolves dependencies through `Microsoft.Extensions.DependencyInjection`, with each public `IThing` automatically resolving to its same-named public `Thing` without explicit registration.
+- `Controller/` is an application outside the published library; it follows the same coding rules and resolves dependencies through `Microsoft.Extensions.DependencyInjection`, with each public `IThing` of the library automatically resolving to its same-named public `Thing` without explicit registration.
 - In `AppBuilder.Configure<T>().UsePlatformDetect()`, always pass `.With(new X11PlatformOptions { OverlayPopups = true })` (merge into any existing `X11PlatformOptions` rather than adding a second `.With()` call). Without it, popups render as separate X11 windows sharing a GPU context with the main window; that context can get stuck and stop repainting after rapid popup open/close cycles, workspace switches, or compositor hiccups, sometimes not clearing until a full reboot. `OverlayPopups = true` renders popups inside their owning window's own surface instead.
-- For major changes to the sample UI, run and exercise it headlessly under `xvfb-run` as part of testing; never target the real display.
+- For major changes to an app's UI, run and exercise it headlessly under `xvfb-run` as part of testing; never target the real display.
 

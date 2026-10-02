@@ -76,4 +76,9 @@ public sealed record MicroGatePeerOptions
     /// Gets a value indicating whether the device's internal loopback mode is enabled, looping transmitted data back to the receiver internally instead of sending it on the line, for self-test without a remote peer. Defaults to <see langword="false"/>. Local only; nothing reaches the remote station while it is enabled.
     /// </summary>
     public bool Loopback { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether every received frame is parsed and pushed to <see cref="IMicroGatePeer.Monitored"/>. Defaults to <see langword="false"/>, in which case received frames are not parsed for monitoring at all. Local only.
+    /// </summary>
+    public bool EnableMonitor { get; init; }
 }
