@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="BlueHeighliner.MicroGate.OptionsPanel">
+    <StackPanel Spacing="6">
+        <TextBlock Text="LINK (MUST MATCH REMOTE)" Classes="section-header" />
+        <Grid ColumnDefinitions="96,*">
+            <TextBlock Text="Encoding" Classes="field-label" />
+            <ComboBox x:Name="EncodingComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*">
+            <TextBlock Text="CRC" Classes="field-label" />
+            <ComboBox x:Name="CrcComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Receive clock source">
+            <TextBlock Text="Receive clock" Classes="field-label" />
+            <ComboBox x:Name="ReceiveClockComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Transmit clock source">
+            <TextBlock Text="Transmit clock" Classes="field-label" />
+            <ComboBox x:Name="TransmitClockComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Phase locked loop divisor">
+            <TextBlock Text="PLL divisor" Classes="field-label" />
+            <ComboBox x:Name="DivisorComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Clock speed (bit/s)">
+            <TextBlock Text="Clock speed" Classes="field-label" />
+            <TextBox x:Name="ClockSpeedTextBox" Grid.Column="1" />
+        </Grid>
+        <StackPanel x:Name="TransmitPanel" Spacing="6">
+        <TextBlock Text="TRANSMIT" Classes="section-header" />
+        <Grid ColumnDefinitions="96,*">
+            <TextBlock Text="Idle pattern" Classes="field-label" />
+            <ComboBox x:Name="IdlePatternComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Preamble pattern">
+            <TextBlock Text="Preamble" Classes="field-label" />
+            <ComboBox x:Name="PreamblePatternComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*">
+            <TextBlock Text="Preamble length" Classes="field-label" />
+            <ComboBox x:Name="PreambleLengthComboBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Underrun action">
+            <TextBlock Text="Underrun" Classes="field-label" />
+            <ComboBox x:Name="UnderrunComboBox" Grid.Column="1" />
+        </Grid>
+        </StackPanel>
+        <StackPanel x:Name="ConnectionPanel" Spacing="6">
+        <TextBlock Text="CONNECTION" Classes="section-header" />
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Max info field (1-4090 bytes)">
+            <TextBlock Text="Max info (B)" Classes="field-label" />
+            <TextBox x:Name="MaxInfoFieldTextBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Transmit window (1-7)">
+            <TextBlock Text="Window" Classes="field-label" />
+            <TextBox x:Name="TransmitWindowTextBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Connect retry interval in seconds, blank = never">
+            <TextBlock Text="Retry (s)" Classes="field-label" />
+            <TextBox x:Name="RetryIntervalTextBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Retransmit interval in seconds, blank = never">
+            <TextBlock Text="Retransmit (s)" Classes="field-label" />
+            <TextBox x:Name="RetransmitIntervalTextBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Acknowledge delay in seconds, 0 = at once">
+            <TextBlock Text="Ack delay (s)" Classes="field-label" />
+            <TextBox x:Name="AcknowledgeDelayTextBox" Grid.Column="1" />
+        </Grid>
+        <Grid ColumnDefinitions="96,*" ToolTip.Tip="Max retransmissions, blank = unlimited">
+            <TextBlock Text="Max resends" Classes="field-label" />
+            <TextBox x:Name="MaxRetransmissionsTextBox" Grid.Column="1" />
+        </Grid>
+        <CheckBox x:Name="DisablePollFinalCheckBox" Content="Disable poll/final bit" FontSize="12" MinHeight="24" />
+        <CheckBox x:Name="LoopbackCheckBox" Content="Internal loopback" FontSize="12" MinHeight="24" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

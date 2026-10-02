@@ -165,4 +165,55 @@ public sealed class MicroGatePeerMonitoringTests : IDisposable
         harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
         await establishing.WaitAsync(timeout);
     }
+
+    [Fact]
+    public async Task Transmitted_WhenEnabled_ReportsEveryFrameWrittenInOrder()
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+        TestObserver<MicroGateFrame> sent = new();
+        peer.Transmitted.Subscribe(sent);
+        await peer.Start("port", harness.Options);
+        Task connecting = peer.Connect(harness.Address, harness.RemoteAddress).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await connecting.WaitAsync(timeout);
+
+        await peer.Send(new byte[] { 4, 5 });
+        List<MicroGateFrame> seen = await sent.Next(2);
+
+        Assert.Equal([MicroGateFrameKind.SetAsynchronousBalancedMode, MicroGateFrameKind.Information], seen.Select(frame => frame.Kind));
+        Assert.Equal(0xFF, seen[0].Address);
+        Assert.Equal(new byte[] { 4, 5 }, seen[1].Payload.ToArray());
+        Assert.Equal(harness.Written.Select(frame => frame.ToArray()), seen.Select(frame => frame.Raw.ToArray()));
+    }
+
+    [Fact]
+    public async Task Transmitted_WhenDisabled_ReportsNothing()
+    {
+        await using MicroGatePeer peer = harness.CreatePeer();
+        TestObserver<MicroGateFrame> sent = new();
+        peer.Transmitted.Subscribe(sent);
+        await peer.Start("port", harness.Options with { EnableMonitor = false });
+
+        await peer.Forward(new byte[] { 0x21, 0x10 });
+
+        Assert.Empty(sent.Seen);
+        Assert.Single(harness.Written);
+    }
+
+    [Fact]
+    public async Task Transmitted_ReportsForwardedFramesAndCompletesWhenThePeerIsDisposed()
+    {
+        MicroGatePeer peer = harness.CreatePeer();
+        TestObserver<MicroGateFrame> sent = new();
+        peer.Transmitted.Subscribe(sent);
+        await peer.Start("port", harness.Options);
+
+        await peer.Forward(new byte[] { 0x21, 0x10 });
+        MicroGateFrame frame = await sent.Next();
+        await peer.DisposeAsync();
+
+        Assert.Equal(new byte[] { 0x21, 0x10 }, frame.Raw.ToArray());
+        await sent.Completed.WaitAsync(timeout);
+    }
 }

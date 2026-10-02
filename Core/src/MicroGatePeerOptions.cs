@@ -83,7 +83,7 @@ public sealed record MicroGatePeerOptions
     public bool Loopback { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether every received frame is parsed and pushed to <see cref="IMicroGatePeer.Monitored"/>. Defaults to <see langword="false"/>, in which case received frames are not parsed for monitoring at all. Local only.
+    /// Gets a value indicating whether every received frame is parsed and pushed to <see cref="IMicroGatePeer.Monitored"/>, and every frame written to the device to <see cref="IMicroGatePeer.Transmitted"/>. Defaults to <see langword="false"/>, in which case received frames are not parsed for monitoring at all. Local only.
     /// </summary>
     public bool EnableMonitor { get; init; }
 }

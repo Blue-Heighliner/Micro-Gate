@@ -16,6 +16,8 @@ internal static class Program
         services.AddConventionServices(typeof(IMicroGatePeerFactory).Assembly);
         services.AddTransient<IFrameDescriber, FrameDescriber>();
         services.AddTransient<ILogSerializer, LogSerializer>();
+        services.AddTransient<IStartupParser, StartupParser>();
+        services.AddSingleton(provider => provider.GetRequiredService<IStartupParser>().Parse(args));
         services.AddTransient<MainWindow>();
         App.Services = services.BuildServiceProvider();
 

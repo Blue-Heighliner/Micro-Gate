@@ -25,6 +25,20 @@ public sealed class LogSerializerTests
     }
 
     [Fact]
+    public async Task SaveThenLoad_RestoresTheFields()
+    {
+        using MemoryStream stream = new();
+
+        await serializer.Save([new LogEntry("row", [1], [new LogField { Name = "Address", Value = "19" }]), new LogEntry("plain", [2])], stream);
+        stream.Position = 0;
+        IReadOnlyList<LogEntry> loaded = await serializer.Load(stream);
+
+        Assert.Equal([("Address", "19")], loaded[0].Fields.Select(field => (field.Name, field.Value)));
+        Assert.True(loaded[0].HasFields);
+        Assert.False(loaded[1].HasFields);
+    }
+
+    [Fact]
     public async Task SaveThenLoad_KeepsAnEmptyDataRowDistinctFromAStatusMessage()
     {
         using MemoryStream stream = new();

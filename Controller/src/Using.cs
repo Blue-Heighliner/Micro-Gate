@@ -7,6 +7,7 @@ global using Avalonia.Markup.Xaml;
 global using Avalonia.Media;
 global using Avalonia.Platform.Storage;
 global using Avalonia.Threading;
+global using Avalonia.VisualTree;
 global using Avalonia.X11;
 global using Microsoft.Extensions.DependencyInjection;
 global using System.Buffers;

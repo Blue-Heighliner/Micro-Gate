@@ -12,7 +12,8 @@ internal sealed partial class MainWindow : Window
     /// <param name="peerFactory">The factory that creates a new, idle peer. A peer is single use, so one is created for every connection.</param>
     /// <param name="describer">The describer of the frames shown in monitor and passthrough mode.</param>
     /// <param name="serializer">The serializer that saves and loads the log.</param>
-    public MainWindow(IMicroGatePortSource portSource, IMicroGatePeerFactory peerFactory, IFrameDescriber describer, ILogSerializer serializer)
+    /// <param name="startup">What the command line asked for, such as the mode to open in.</param>
+    public MainWindow(IMicroGatePortSource portSource, IMicroGatePeerFactory peerFactory, IFrameDescriber describer, ILogSerializer serializer, StartupOptions startup)
     {
         this.portSource = portSource;
         this.peerFactory = peerFactory;
@@ -20,42 +21,28 @@ internal sealed partial class MainWindow : Window
         this.serializer = serializer;
         InitializeComponent();
 
-        MicroGatePeerOptions defaults = new();
-        Fill(ModeComboBox, ControllerMode.Peer);
-        Fill(EncodingComboBox, defaults.Link.Encoding);
-        Fill(CrcComboBox, defaults.Link.Crc);
-        Fill(ReceiveClockComboBox, defaults.Link.ReceiveClockSource);
-        Fill(TransmitClockComboBox, defaults.Link.TransmitClockSource);
-        Fill(DivisorComboBox, defaults.Link.PhaseLockedLoopDivisor);
-        Fill(IdlePatternComboBox, defaults.IdlePattern);
-        Fill(PreamblePatternComboBox, defaults.PreamblePattern);
-        Fill(PreambleLengthComboBox, defaults.PreambleLength);
-        Fill(UnderrunComboBox, defaults.UnderrunAction);
-        ClockSpeedTextBox.Text = defaults.Link.ClockSpeed.ToString(CultureInfo.InvariantCulture);
-        MaxInfoFieldTextBox.Text = defaults.MaxInfoField.ToString(CultureInfo.InvariantCulture);
-        TransmitWindowTextBox.Text = defaults.TransmitWindow.ToString(CultureInfo.InvariantCulture);
-        RetryIntervalTextBox.Text = FormatSeconds(defaults.RetryInterval);
-        RetransmitIntervalTextBox.Text = FormatSeconds(defaults.RetransmitInterval);
-        MaxRetransmissionsTextBox.Text = defaults.MaxRetransmissions?.ToString(CultureInfo.InvariantCulture);
-        AcknowledgeDelayTextBox.Text = FormatSeconds(defaults.AcknowledgeDelay);
-        DisablePollFinalCheckBox.IsChecked = defaults.DisablePollFinalBit;
-        LoopbackCheckBox.IsChecked = defaults.Loopback;
-        MaxInfoFieldTextBox.TextChanged += (_, _) =>
-        {
-            if (int.TryParse(MaxInfoFieldTextBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int size) && size is >= 1 and <= 4090)
-            {
-                SendGrid.MaxCells = size;
-            }
-        };
+        mode = startup.InitialMode;
+        AddressTextBox.Text = startup.LocalAddress?.ToString(CultureInfo.InvariantCulture) ?? AddressTextBox.Text;
+        RemoteAddressTextBox.Text = startup.RemoteAddress?.ToString(CultureInfo.InvariantCulture) ?? RemoteAddressTextBox.Text;
+        ModeComboBox.Fill(mode);
+        LinkOptions.MaxInfoFieldChanged += (_, size) => SendGrid.MaxCells = size;
+        ColumnsTextBox.Text = columns.ToString(CultureInfo.InvariantCulture);
         InputModeComboBox.ItemsSource = new[] { "ASCII", "Raw values" };
         InputModeComboBox.SelectedIndex = 0;
         SendGrid.Cells = [];
-        SendGrid.MaxCells = defaults.MaxInfoField;
+        SendGrid.MaxCells = new MicroGatePeerOptions().MaxInfoField;
         SendGrid.Edited += (_, _) => UpdateSendCount();
         SendGrid.SubmitRequested += async (_, _) => await Send();
-        LogListBox.ItemsSource = log;
+        LogViewComboBox.Fill(LogView.Frames);
+        LogListBox.ItemsSource = shown;
+        LogListBox.AddHandler(PointerPressedEvent, LogListBox_PointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
+        LogListBox.KeyDown += LogListBox_KeyDown;
 
         UpdateMode();
+        if (startup.Problem is { } problem)
+        {
+            AppendMessage(problem);
+        }
 
         Loaded += async (_, _) => await RefreshPorts();
         Closed += (_, _) =>
@@ -73,11 +60,16 @@ internal sealed partial class MainWindow : Window
     private readonly ILogSerializer serializer;
     private readonly List<IMicroGatePeer> peers = [];
     private readonly List<Channel<byte[]>> relays = [];
-    private readonly ObservableCollection<LogEntry> log = [];
+    private readonly List<LogEntry> log = [];
+    private readonly ObservableCollection<LogEntry> shown = [];
     private readonly List<IDisposable> subscriptions = [];
     private readonly int maxLogEntries = 5000;
     private ControllerMode mode = ControllerMode.Peer;
     private CancellationTokenSource? connectCancellation;
+    private int columns = 30;
+    private LogView view = LogView.Frames;
+    private int firstFrames;
+    private int secondFrames;
     private string firstName = "A";
     private string secondName = "B";
     private int firstCount;
@@ -136,6 +128,8 @@ internal sealed partial class MainWindow : Window
 
         firstCount = 0;
         secondCount = 0;
+        firstFrames = 0;
+        secondFrames = 0;
         firstName = portName;
         secondName = PortBComboBox.SelectedItem as string ?? string.Empty;
         UpdateCounts();
@@ -158,10 +152,10 @@ internal sealed partial class MainWindow : Window
 
     private async Task ConnectPeer(string portName, MicroGatePeerOptions options)
     {
-        if (!byte.TryParse(AddressTextBox.Text?.Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte address)
-            || !byte.TryParse(RemoteAddressTextBox.Text?.Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte remoteAddress))
+        if (!byte.TryParse(AddressTextBox.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out byte address)
+            || !byte.TryParse(RemoteAddressTextBox.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out byte remoteAddress))
         {
-            AppendMessage("Both addresses must be hex bytes (00-FF).");
+            AppendMessage("Both addresses must be whole numbers from 0 to 255.");
             return;
         }
 
@@ -173,13 +167,15 @@ internal sealed partial class MainWindow : Window
 
         IMicroGatePeer newPeer = Open(portName, string.Empty);
         newPeer.Receiver = OnReceived;
+        subscriptions.Add(newPeer.Monitored.Subscribe(frame => OnFrame(frame, "Receive", true)));
+        subscriptions.Add(newPeer.Transmitted.Subscribe(frame => OnFrame(frame, "Transmit", false)));
         CancellationToken cancellation = connectCancellation!.Token;
-        AppendMessage($"Connecting on {portName} as {address:X2} to {remoteAddress:X2}...");
+        AppendMessage($"Connecting on {portName} as {address} to {remoteAddress}...");
         UpdateState();
 
         try
         {
-            await newPeer.Start(portName, options, cancellation);
+            await newPeer.Start(portName, options with { EnableMonitor = true }, cancellation);
             await newPeer.Connect(address, remoteAddress, cancellation);
             AppendMessage("Connected.");
         }
@@ -196,7 +192,7 @@ internal sealed partial class MainWindow : Window
     private async Task ConnectMonitor(string portName, MicroGatePeerOptions options)
     {
         IMicroGatePeer newPeer = Open(portName, string.Empty);
-        subscriptions.Add(newPeer.Monitored.Subscribe(frame => OnFrame(frame, "RX", true)));
+        subscriptions.Add(newPeer.Monitored.Subscribe(frame => OnFrame(frame, "Receive", true)));
         AppendMessage($"Monitoring {portName}...");
 
         if (await StartAll([(newPeer, portName)], options with { EnableMonitor = true }))
@@ -310,27 +306,42 @@ internal sealed partial class MainWindow : Window
         Dispatcher.UIThread.Post(() =>
         {
             firstCount++;
-            AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  RX  {data.Length} bytes", data));
+            AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  Receive  {data.Length}B", data));
             UpdateCounts();
         });
     }
 
     private void OnFrame(MicroGateFrame frame, string direction, bool isFirst)
     {
-        byte[] raw = frame.Raw.ToArray();
+        byte[] data = (frame.Kind == MicroGateFrameKind.Malformed ? frame.Raw : frame.Payload).ToArray();
         string text = $"{frame.Timestamp:HH:mm:ss.fff}  {direction}  {describer.Describe(frame)}";
+        IReadOnlyList<LogField> fields = describer.Details(frame);
         Dispatcher.UIThread.Post(() =>
         {
             if (isFirst)
             {
-                firstCount++;
+                firstFrames++;
             }
             else
             {
-                secondCount++;
+                secondFrames++;
             }
 
-            AppendEntry(new LogEntry(text, raw));
+            AppendEntry(new LogEntry(text, data, fields));
+            if (mode != ControllerMode.Peer && frame.Kind == MicroGateFrameKind.Information && !frame.Payload.IsEmpty)
+            {
+                if (isFirst)
+                {
+                    firstCount++;
+                }
+                else
+                {
+                    secondCount++;
+                }
+
+                AppendEntry(new LogEntry($"{frame.Timestamp:HH:mm:ss.fff}  {direction}  {data.Length}B", data));
+            }
+
             UpdateCounts();
         });
     }
@@ -357,12 +368,12 @@ internal sealed partial class MainWindow : Window
     {
         bool isPeer = mode == ControllerMode.Peer;
         bool isPassthrough = mode == ControllerMode.Passthrough;
-        PortHeaderText.Text = isPassthrough ? "PORT A" : "PORT";
+        PortHeaderText.Text = isPassthrough ? "Port A" : "Port";
         PortBPanel.IsVisible = isPassthrough;
         AddressesPanel.IsVisible = isPeer;
-        TransmitPanel.IsVisible = mode != ControllerMode.Monitor;
-        ConnectionPanel.IsVisible = isPeer;
+        LinkOptions.SetMode(mode);
         SendPanel.IsVisible = isPeer;
+        ApplyView();
         UpdateState();
         UpdateCounts();
     }
@@ -376,157 +387,99 @@ internal sealed partial class MainWindow : Window
         {
             (ControllerMode.Peer, false) => "Connect",
             (ControllerMode.Peer, true) => "Disconnect",
-            (ControllerMode.Monitor, false) => "Start Monitoring",
-            (ControllerMode.Passthrough, false) => "Start Passthrough",
+            (_, false) => "Start",
             _ => "Stop",
         };
         SendButton.IsEnabled = mode == ControllerMode.Peer && state == MicroGatePeerState.Connected;
         StatusText.Text = state == MicroGatePeerState.Ready ? (mode == ControllerMode.Monitor ? "Monitoring" : "Passing through") : state.ToString();
     }
 
-    private void UpdateCounts() => CountText.Text = mode switch
+    private void UpdateCounts()
     {
-        ControllerMode.Peer => $"{firstCount} received, {secondCount} sent",
-        ControllerMode.Monitor => firstCount == 1 ? "1 frame" : $"{firstCount} frames",
-        _ => $"{firstCount} {firstName} > {secondName}, {secondCount} {secondName} > {firstName}",
-    };
-
-    private MicroGatePeerOptions? BuildOptions()
-    {
-        MicroGatePeerOptions defaults = new();
-        int maxInfoField = defaults.MaxInfoField;
-        int transmitWindow = defaults.TransmitWindow;
-        TimeSpan? retryInterval = defaults.RetryInterval;
-        TimeSpan? retransmitInterval = defaults.RetransmitInterval;
-        int? maxRetransmissions = defaults.MaxRetransmissions;
-        TimeSpan acknowledgeDelay = defaults.AcknowledgeDelay;
-
-        if (!TryParseInt(ClockSpeedTextBox, "Clock speed", 1, int.MaxValue, out int clockSpeed))
+        bool frames = view == LogView.Frames;
+        int first = frames ? firstFrames : firstCount;
+        int second = frames ? secondFrames : secondCount;
+        CountText.Text = (mode, frames) switch
         {
-            return null;
-        }
-
-        if (mode == ControllerMode.Peer)
-        {
-            if (!TryParseInt(MaxInfoFieldTextBox, "Max info field", 1, 4090, out maxInfoField)
-                || !TryParseInt(TransmitWindowTextBox, "Transmit window", 1, 7, out transmitWindow)
-                || !TryParseSeconds(RetryIntervalTextBox, "Connect retry interval", out retryInterval)
-                || !TryParseSeconds(RetransmitIntervalTextBox, "Retransmit interval", out retransmitInterval)
-                || !TryParseDelay(AcknowledgeDelayTextBox, "Acknowledge delay", out acknowledgeDelay))
-            {
-                return null;
-            }
-
-            maxRetransmissions = null;
-            if (!string.IsNullOrWhiteSpace(MaxRetransmissionsTextBox.Text))
-            {
-                if (!TryParseInt(MaxRetransmissionsTextBox, "Max retransmissions", 0, int.MaxValue, out int parsed))
-                {
-                    return null;
-                }
-
-                maxRetransmissions = parsed;
-            }
-        }
-
-        return new MicroGatePeerOptions
-        {
-            Link = new MicroGateLinkOptions
-            {
-                Encoding = Pick<MicroGateEncoding>(EncodingComboBox),
-                Crc = Pick<MicroGateCrc>(CrcComboBox),
-                ReceiveClockSource = Pick<MicroGateReceiveClockSource>(ReceiveClockComboBox),
-                TransmitClockSource = Pick<MicroGateTransmitClockSource>(TransmitClockComboBox),
-                PhaseLockedLoopDivisor = Pick<MicroGatePhaseLockedLoopDivisor>(DivisorComboBox),
-                ClockSpeed = clockSpeed,
-            },
-            IdlePattern = Pick<MicroGateIdlePattern>(IdlePatternComboBox),
-            PreamblePattern = Pick<MicroGatePreamblePattern>(PreamblePatternComboBox),
-            PreambleLength = Pick<MicroGatePreambleLength>(PreambleLengthComboBox),
-            UnderrunAction = Pick<MicroGateUnderrunAction>(UnderrunComboBox),
-            DisablePollFinalBit = mode == ControllerMode.Peer ? DisablePollFinalCheckBox.IsChecked == true : defaults.DisablePollFinalBit,
-            MaxInfoField = maxInfoField,
-            RetryInterval = retryInterval,
-            RetransmitInterval = retransmitInterval,
-            MaxRetransmissions = maxRetransmissions,
-            AcknowledgeDelay = acknowledgeDelay,
-            TransmitWindow = transmitWindow,
-            Loopback = mode == ControllerMode.Peer && LoopbackCheckBox.IsChecked == true,
+            (ControllerMode.Peer, true) => $"{first} frames received, {second} transmitted",
+            (ControllerMode.Peer, false) => $"{first} received, {second} sent",
+            (ControllerMode.Monitor, true) => first == 1 ? "1 frame" : $"{first} frames",
+            (ControllerMode.Monitor, false) => $"{first} received",
+            _ => $"{first} {firstName} > {secondName}, {second} {secondName} > {firstName}",
         };
     }
 
-    private void Fill<T>(ComboBox box, T selected)
-        where T : struct, Enum
+    private MicroGatePeerOptions? BuildOptions()
     {
-        box.ItemsSource = Enum.GetValues<T>();
-        box.SelectedItem = selected;
-    }
-
-    private T Pick<T>(ComboBox box)
-        where T : struct, Enum => box.SelectedItem is T value ? value : default;
-
-    private string FormatSeconds(TimeSpan? interval) => interval?.TotalSeconds.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-
-    private bool TryParseInt(TextBox box, string name, int min, int max, out int value)
-    {
-        if (int.TryParse(box.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out value) && value >= min && value <= max)
+        if (LinkOptions.Build(mode, out string problem) is { } built)
         {
-            return true;
+            return built;
         }
 
-        AppendMessage(max == int.MaxValue ? $"{name} must be a whole number of at least {min}." : $"{name} must be a whole number from {min} to {max}.");
-        return false;
+        AppendMessage(problem);
+        return null;
     }
 
-    private bool TryParseDelay(TextBox box, string name, out TimeSpan value)
-    {
-        value = TimeSpan.Zero;
-        if (double.TryParse(box.Text?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds >= 0 && seconds < 86400)
-        {
-            value = TimeSpan.FromSeconds(seconds);
-            return true;
-        }
-
-        AppendMessage($"{name} must be a number of seconds, zero or more.");
-        return false;
-    }
-
-    private bool TryParseSeconds(TextBox box, string name, out TimeSpan? value)
-    {
-        value = null;
-        string text = box.Text?.Trim() ?? string.Empty;
-        if (text.Length == 0)
-        {
-            return true;
-        }
-
-        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds > 0 && seconds < 86400)
-        {
-            value = TimeSpan.FromSeconds(seconds);
-            return true;
-        }
-
-        AppendMessage($"{name} must be a positive number of seconds, or blank for none.");
-        return false;
-    }
-
-    private void UpdateSendCount() => SendCountText.Text = SendGrid.Cells?.Count == 1 ? "1 byte" : $"{SendGrid.Cells?.Count ?? 0} bytes";
+    private void UpdateSendCount() => SendCountText.Text = $"{SendGrid.Cells?.Count ?? 0}B";
 
     private void InputMode_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         bool raw = InputModeComboBox.SelectedIndex == 1;
         SendGrid.RawInput = raw;
-        SendHintText.Text = raw
-            ? "Select a cell and type a 0-255 value; Tab moves to the next cell. Right click for control characters and delete. Enter sends."
-            : "Select a cell and type characters; each fills a cell and moves to the next. Right click for control characters and delete. Enter sends.";
     }
 
-    private void LogListBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void LogListBox_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        object? selected = LogListBox.SelectedItem;
-        foreach (LogEntry entry in log)
+        if (!e.GetCurrentPoint(LogListBox).Properties.IsLeftButtonPressed)
         {
-            entry.IsExpanded = entry == selected && entry.HasData;
+            return;
+        }
+
+        for (Visual? visual = e.Source as Visual; visual is not null && visual != LogListBox; visual = visual.GetVisualParent())
+        {
+            if (visual is ByteGrid or SelectableTextBlock)
+            {
+                return;
+            }
+
+            if (visual is ListBoxItem { DataContext: LogEntry entry })
+            {
+                ToggleExpanded(entry);
+                return;
+            }
+        }
+    }
+
+    private void LogListBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Enter or Key.Space && LogListBox.SelectedItem is LogEntry entry)
+        {
+            ToggleExpanded(entry);
+            e.Handled = true;
+        }
+    }
+
+    private void ToggleExpanded(LogEntry entry)
+    {
+        if (!entry.HasData)
+        {
+            return;
+        }
+
+        bool expand = !entry.IsExpanded;
+        foreach (LogEntry other in log)
+        {
+            other.IsExpanded = false;
+        }
+
+        entry.IsExpanded = expand;
+    }
+
+    private void AutoScroll_Changed(object? sender, RoutedEventArgs e)
+    {
+        if (shown.Count > 0 && AutoScrollToggle.IsChecked == true)
+        {
+            LogListBox.ScrollIntoView(shown[^1]);
         }
     }
 
@@ -549,7 +502,7 @@ internal sealed partial class MainWindow : Window
 
         if (data.Length > connected.MaxPayloadSize)
         {
-            AppendMessage($"Cannot send: {data.Length} bytes exceeds the maximum payload of {connected.MaxPayloadSize}.");
+            AppendMessage($"Cannot send: {data.Length}B exceeds the maximum payload of {connected.MaxPayloadSize}B.");
             return;
         }
 
@@ -558,7 +511,9 @@ internal sealed partial class MainWindow : Window
         {
             await connected.Send(data);
             secondCount++;
-            AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  TX  {data.Length} bytes", data));
+            AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  Transmit  {data.Length}B", data));
+            SendGrid.Cells = [];
+            UpdateSendCount();
             UpdateCounts();
         }
         catch (Exception ex)
@@ -638,11 +593,16 @@ internal sealed partial class MainWindow : Window
             log.Clear();
             foreach (LogEntry entry in loaded)
             {
+                entry.Columns = columns;
                 log.Add(entry);
             }
 
+            ApplyView();
+
             firstCount = 0;
             secondCount = 0;
+            firstFrames = 0;
+            secondFrames = 0;
             UpdateCounts();
             AppendMessage($"Loaded {loaded.Count} rows from {files[0].Name}.");
         }
@@ -655,22 +615,73 @@ internal sealed partial class MainWindow : Window
     private void ClearLog_Click(object? sender, RoutedEventArgs e)
     {
         log.Clear();
+        shown.Clear();
         firstCount = 0;
         secondCount = 0;
+        firstFrames = 0;
+        secondFrames = 0;
         UpdateCounts();
     }
 
     private void AppendMessage(string message) => AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  {message}", null));
 
+    private void Columns_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (!int.TryParse(ColumnsTextBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int value) || value is < 1 or > 512 || value == columns)
+        {
+            return;
+        }
+
+        columns = value;
+        SendGrid.Columns = value;
+        foreach (LogEntry entry in log)
+        {
+            entry.Columns = value;
+        }
+    }
+
+    private void LogView_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (LogViewComboBox.SelectedItem is LogView selected && selected != view)
+        {
+            view = selected;
+            ApplyView();
+            UpdateCounts();
+        }
+    }
+
+    private bool IsShown(LogEntry entry) => view == LogView.Frames ? entry.IsFrame || !entry.HasData : !entry.IsFrame;
+
+    private void ApplyView()
+    {
+        shown.Clear();
+        foreach (LogEntry entry in log.Where(IsShown))
+        {
+            shown.Add(entry);
+        }
+
+        if (shown.Count > 0 && AutoScrollToggle.IsChecked == true)
+        {
+            LogListBox.ScrollIntoView(shown[^1]);
+        }
+    }
+
     private void AppendEntry(LogEntry entry)
     {
+        entry.Columns = columns;
         log.Add(entry);
+        if (IsShown(entry))
+        {
+            shown.Add(entry);
+        }
+
         while (log.Count > maxLogEntries)
         {
+            shown.Remove(log[0]);
             log.RemoveAt(0);
         }
 
-        if (LogListBox.SelectedItem is null)
+        if (AutoScrollToggle.IsChecked == true && IsShown(entry))
         {
             LogListBox.ScrollIntoView(entry);
         }

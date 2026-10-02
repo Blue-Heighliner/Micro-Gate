@@ -30,9 +30,17 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// Gets a stream of every frame received on the device, in the order received, parsed but not acted on: it includes the SABM, UA, DISC, DM, FRMR, RR, RNR, and REJ frames two stations use to manage their connection, those addressed to other stations, and frames that could not be parsed. Only pushed while <see cref="MicroGatePeerOptions.EnableMonitor"/> is <see langword="true"/>; when it is not, received frames are not even parsed. The stream completes together with <see cref="StateChanged"/>.
     /// </summary>
     /// <remarks>
-    /// The stream is hot: a frame received while nothing is subscribed is discarded, so subscribe before calling <see cref="Start"/>. Frames are delivered one at a time, in order, on the thread reading the device and never while the peer holds a lock, together with the state changes, so an observer should not block for long. The monitored frames are those received, not those this peer sends. An exception thrown by an observer is reported on <see cref="Exceptions"/>.
+    /// The stream is hot: a frame received while nothing is subscribed is discarded, so subscribe before calling <see cref="Start"/>. Frames are delivered one at a time, in order, on the thread reading the device and never while the peer holds a lock, together with the state changes, so an observer should not block for long. The monitored frames are those received; see <see cref="Transmitted"/> for those the peer writes. An exception thrown by an observer is reported on <see cref="Exceptions"/>.
     /// </remarks>
     IObservable<MicroGateFrame> Monitored { get; }
+
+    /// <summary>
+    /// Gets a stream of every frame this peer writes to the device, in the order written, parsed like <see cref="Monitored"/>: the connection request, acknowledgements, information frames, resends, polls, responses, the disconnect, and frames relayed with <see cref="Forward"/>. Pushed under the same condition as <see cref="Monitored"/>, <see cref="MicroGatePeerOptions.EnableMonitor"/>; when it is not set, nothing is parsed. A frame is reported once it has been handed to the device. The stream completes together with <see cref="StateChanged"/>.
+    /// </summary>
+    /// <remarks>
+    /// The stream is hot and delivered like <see cref="Monitored"/>: one item at a time, in order, never under a lock, with an observer's exception reported on <see cref="Exceptions"/>. Together with <see cref="Monitored"/> it gives the complete traffic of the link as this station sees it.
+    /// </remarks>
+    IObservable<MicroGateFrame> Transmitted { get; }
 
     /// <summary>
     /// Gets the current state of the peer.
@@ -148,6 +156,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         StateChanged = Isolate(stateChanged, Report);
         Exceptions = Isolate(exceptions, static _ => { });
         Monitored = Isolate(monitored, Report);
+        Transmitted = Isolate(transmitted, Report);
         connectionEstablished.Task.ContinueWith(static task => task.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
     }
 
@@ -158,6 +167,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private readonly Subject<MicroGatePeerState> stateChanged = new();
     private readonly Subject<Exception> exceptions = new();
     private readonly Subject<MicroGateFrame> monitored = new();
+    private readonly Subject<MicroGateFrame> transmitted = new();
     private readonly Queue<Exception> pendingExceptions = new();
     private readonly Queue<Action> notifications = new();
     private readonly Lock stateLock = new();
@@ -207,6 +217,9 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
     /// <inheritdoc />
     public IObservable<MicroGateFrame> Monitored { get; }
+
+    /// <inheritdoc />
+    public IObservable<MicroGateFrame> Transmitted { get; }
 
     /// <inheritdoc />
     public MicroGatePeerState State
@@ -894,14 +907,14 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
             if (result.Response is { } response)
             {
-                device!.Write(response);
+                WriteToDevice(response);
             }
 
             if (result.Retransmit)
             {
                 foreach (ReadOnlyMemory<byte> retransmission in CreateRetransmission())
                 {
-                    device!.Write(retransmission);
+                    WriteToDevice(retransmission);
                 }
 
                 RestartAcknowledgementTimer();
@@ -1107,6 +1120,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private void CompleteStreams()
     {
         monitored.OnCompleted();
+        transmitted.OnCompleted();
         stateChanged.OnCompleted();
         PublishExceptions();
         exceptions.OnCompleted();
@@ -1157,38 +1171,70 @@ public sealed class MicroGatePeer : IMicroGatePeer
         }
     }
 
+    private void WriteToDevice(ReadOnlyMemory<byte> frame)
+    {
+        device!.Write(frame);
+        if (!options.EnableMonitor || !transmitted.HasObservers)
+        {
+            return;
+        }
+
+        MicroGateFrame parsed = ParseFrame(frame.Span);
+        lock (stateLock)
+        {
+            if (!finished)
+            {
+                notifications.Enqueue(() => transmitted.OnNext(parsed));
+            }
+        }
+    }
+
     private void WriteFrame(Func<ReadOnlyMemory<byte>> createFrame, Action? onFailure = null, Action? onWritten = null)
     {
-        lock (writeLock)
+        try
         {
-            ReadOnlyMemory<byte> frame = createFrame();
-            if (frame.IsEmpty)
+            lock (writeLock)
             {
-                return;
-            }
+                ReadOnlyMemory<byte> frame = createFrame();
+                if (frame.IsEmpty)
+                {
+                    return;
+                }
 
-            try
-            {
-                device!.Write(frame);
-            }
-            catch
-            {
-                onFailure?.Invoke();
-                throw;
-            }
+                try
+                {
+                    WriteToDevice(frame);
+                }
+                catch
+                {
+                    onFailure?.Invoke();
+                    throw;
+                }
 
-            onWritten?.Invoke();
+                onWritten?.Invoke();
+            }
+        }
+        finally
+        {
+            Notify();
         }
     }
 
     private void WriteFrames(Func<IReadOnlyList<ReadOnlyMemory<byte>>> createFrames)
     {
-        lock (writeLock)
+        try
         {
-            foreach (ReadOnlyMemory<byte> frame in createFrames())
+            lock (writeLock)
             {
-                device!.Write(frame);
+                foreach (ReadOnlyMemory<byte> frame in createFrames())
+                {
+                    WriteToDevice(frame);
+                }
             }
+        }
+        finally
+        {
+            Notify();
         }
     }
 

@@ -16,6 +16,11 @@ internal sealed record SavedLogEntry
     public string? Data { get; init; }
 
     /// <summary>
+    /// Gets the named fields describing the row.
+    /// </summary>
+    public IReadOnlyList<LogField> Fields { get; init; } = [];
+
+    /// <summary>
     /// Gets the indexes of the data cells that were shown as their 0-255 value.
     /// </summary>
     public IReadOnlyList<int> RawCells { get; init; } = [];

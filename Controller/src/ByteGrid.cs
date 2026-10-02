@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// A table of bytes, 30 cells wide, with column numbers above and row numbers to the left. Cells show their ASCII character by default and can be switched, with multi-select, to their 0-255 value. When editable, typing fills the selected cell and moves to the next, and the context menu inserts or replaces control characters and deletes cells.
+/// A table of bytes, <see cref="Columns"/> cells wide (30 by default), with every cell's 0-based index above it. Cells show their ASCII character by default and can be switched, with multi-select, to their 0-255 value. When editable, typing fills the selected cell and moves to the next, and the context menu inserts or replaces control characters and deletes cells.
 /// </summary>
 internal sealed class ByteGrid : Control
 {
@@ -26,6 +26,11 @@ internal sealed class ByteGrid : Control
     public static readonly StyledProperty<int> MaxCellsProperty = AvaloniaProperty.Register<ByteGrid, int>(nameof(MaxCells), int.MaxValue);
 
     /// <summary>
+    /// Identifies the <see cref="Columns"/> property.
+    /// </summary>
+    public static readonly StyledProperty<int> ColumnsProperty = AvaloniaProperty.Register<ByteGrid, int>(nameof(Columns), 30, validate: value => value >= 1);
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ByteGrid"/> class.
     /// </summary>
     public ByteGrid()
@@ -34,11 +39,9 @@ internal sealed class ByteGrid : Control
         typeface = new Typeface(new FontFamily("Cascadia Code,Consolas,Menlo,monospace"));
     }
 
-    private readonly int columns = 30;
     private readonly double cellWidth = 28;
     private readonly double cellHeight = 22;
-    private readonly double headerHeight = 20;
-    private readonly double rowHeaderWidth = 40;
+    private readonly double indexHeight = 14;
     private readonly Typeface typeface;
     private readonly ControlCharacters characters = new();
     private readonly SortedSet<int> selection = [];
@@ -71,6 +74,15 @@ internal sealed class ByteGrid : Control
     {
         get => GetValue(CellsProperty);
         set => SetValue(CellsProperty, value);
+    }
+
+    /// <summary>
+    /// Gets or sets how many cells wide the table is, at least 1.
+    /// </summary>
+    public int Columns
+    {
+        get => GetValue(ColumnsProperty);
+        set => SetValue(ColumnsProperty, value);
     }
 
     /// <summary>
@@ -110,20 +122,11 @@ internal sealed class ByteGrid : Control
         base.Render(context);
         context.DrawRectangle(Brushes.Transparent, null, new Rect(Bounds.Size));
 
-        for (int column = 0; column < columns; column++)
-        {
-            DrawText(context, column.ToString(CultureInfo.InvariantCulture), headerBrush, new Rect(rowHeaderWidth + (column * cellWidth), 0, cellWidth, headerHeight), 10);
-        }
-
-        int rows = RowCount();
-        for (int row = 0; row < rows; row++)
-        {
-            DrawText(context, row.ToString(CultureInfo.InvariantCulture), headerBrush, new Rect(0, headerHeight + (row * cellHeight), rowHeaderWidth - 6, cellHeight), 10);
-        }
-
         for (int slot = 0; slot < SlotCount; slot++)
         {
-            Rect rect = CellRect(slot).Deflate(1);
+            Rect cell = CellRect(slot);
+            DrawText(context, slot.ToString(CultureInfo.InvariantCulture), headerBrush, new Rect(cell.X, cell.Y - indexHeight, cell.Width, indexHeight), 9);
+            Rect rect = cell.Deflate(1);
             context.DrawRectangle(selection.Contains(slot) ? selectedBrush : cellBrush, null, rect);
             if (slot < Count)
             {
@@ -139,7 +142,7 @@ internal sealed class ByteGrid : Control
     }
 
     /// <inheritdoc />
-    protected override Size MeasureOverride(Size availableSize) => new(rowHeaderWidth + (columns * cellWidth), headerHeight + (RowCount() * cellHeight));
+    protected override Size MeasureOverride(Size availableSize) => new(Columns * cellWidth, RowCount() * (indexHeight + cellHeight));
 
     /// <inheritdoc />
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -153,7 +156,7 @@ internal sealed class ByteGrid : Control
             caret = 0;
         }
 
-        if (change.Property == CellsProperty || change.Property == IsEditableProperty || change.Property == MaxCellsProperty)
+        if (change.Property == CellsProperty || change.Property == IsEditableProperty || change.Property == MaxCellsProperty || change.Property == ColumnsProperty)
         {
             InvalidateMeasure();
         }
@@ -275,11 +278,11 @@ internal sealed class ByteGrid : Control
                 e.Handled = true;
                 break;
             case Key.Up:
-                Move(caret - columns, shift);
+                Move(caret - Columns, shift);
                 e.Handled = true;
                 break;
             case Key.Down:
-                Move(caret + columns, shift);
+                Move(caret + Columns, shift);
                 e.Handled = true;
                 break;
             case Key.Tab when IsEditable:
@@ -336,20 +339,20 @@ internal sealed class ByteGrid : Control
         e.Handled = true;
     }
 
-    private int RowCount() => Math.Max(1, (SlotCount + columns - 1) / columns);
+    private int RowCount() => Math.Max(1, (SlotCount + Columns - 1) / Columns);
 
-    private Rect CellRect(int index) => new(rowHeaderWidth + (index % columns * cellWidth), headerHeight + (index / columns * cellHeight), cellWidth, cellHeight);
+    private Rect CellRect(int index) => new(index % Columns * cellWidth, (index / Columns * (indexHeight + cellHeight)) + indexHeight, cellWidth, cellHeight);
 
     private int IndexAt(Point point)
     {
-        double x = point.X - rowHeaderWidth;
-        double y = point.Y - headerHeight;
-        if (x < 0 || y < 0 || (int)(x / cellWidth) >= columns)
+        double x = point.X;
+        double y = point.Y;
+        if (x < 0 || y < 0 || (int)(x / cellWidth) >= Columns)
         {
             return -1;
         }
 
-        int index = ((int)(y / cellHeight) * columns) + (int)(x / cellWidth);
+        int index = ((int)(y / (indexHeight + cellHeight)) * Columns) + (int)(x / cellWidth);
         return index < SlotCount ? index : -1;
     }
 

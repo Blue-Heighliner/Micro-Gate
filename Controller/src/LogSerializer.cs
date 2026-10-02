@@ -37,6 +37,7 @@ internal sealed class LogSerializer : ILogSerializer
             Entries = [.. entries.Select(entry => new SavedLogEntry
             {
                 Text = entry.Text,
+                Fields = entry.Fields,
                 Data = entry.HasData ? Convert.ToBase64String([.. entry.Cells.Select(cell => cell.Value)]) : null,
                 RawCells = [.. entry.Cells.Index().Where(item => item.Item.ShowRaw).Select(item => item.Index)],
             })],
@@ -66,7 +67,7 @@ internal sealed class LogSerializer : ILogSerializer
 
     private LogEntry Restore(SavedLogEntry saved)
     {
-        LogEntry entry = new(saved.Text, saved.Data is null ? null : Convert.FromBase64String(saved.Data));
+        LogEntry entry = new(saved.Text, saved.Data is null ? null : Convert.FromBase64String(saved.Data), saved.Fields);
         foreach (int index in saved.RawCells.Where(index => index >= 0 && index < entry.Cells.Count))
         {
             entry.Cells[index].ShowRaw = true;
