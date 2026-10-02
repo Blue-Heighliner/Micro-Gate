@@ -44,7 +44,9 @@ internal sealed class LinuxMicroGateMonitorDeviceOpener(ILinuxNative native) : I
         SynclinkParams parameters = new()
         {
             Mode = SynclinkConstants.ModeHdlc,
+            Flags = (ushort)(MapReceiveClockSource(options.ReceiveClockSource) | MapPhaseLockedLoopDivisor(options.PhaseLockedLoopDivisor)),
             Encoding = MapEncoding(options.Encoding),
+            ClockSpeed = (nuint)options.ClockSpeed,
             CrcType = MapCrc(options.Crc),
             AddressFilter = options.HardwareAddressFilter ?? SynclinkConstants.AddressFilterDisabled,
         };
@@ -60,6 +62,23 @@ internal sealed class LinuxMicroGateMonitorDeviceOpener(ILinuxNative native) : I
             throw new IOException($"Failed to {step} on '{path}'; it may not be a SyncLink device.", new Win32Exception(Marshal.GetLastPInvokeError()));
         }
     }
+
+    private ushort MapReceiveClockSource(MicroGateReceiveClockSource value) => value switch
+    {
+        MicroGateReceiveClockSource.OwnPin => 0,
+        MicroGateReceiveClockSource.OtherPin => SynclinkConstants.ReceiveClockOtherPin,
+        MicroGateReceiveClockSource.PhaseLockedLoop => SynclinkConstants.ReceiveClockDpll,
+        MicroGateReceiveClockSource.BaudRateGenerator => SynclinkConstants.ReceiveClockBrg,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapPhaseLockedLoopDivisor(MicroGatePhaseLockedLoopDivisor value) => value switch
+    {
+        MicroGatePhaseLockedLoopDivisor.DivideBy32 => 0,
+        MicroGatePhaseLockedLoopDivisor.DivideBy8 => SynclinkConstants.DpllDivisor8,
+        MicroGatePhaseLockedLoopDivisor.DivideBy16 => SynclinkConstants.DpllDivisor16,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 
     private byte MapEncoding(MicroGateEncoding value) => value switch
     {

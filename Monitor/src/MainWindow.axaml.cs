@@ -20,6 +20,11 @@ internal sealed partial class MainWindow : Window
         EncodingComboBox.SelectedItem = MicroGateEncoding.Nrz;
         CrcComboBox.ItemsSource = Enum.GetValues<MicroGateCrc>();
         CrcComboBox.SelectedItem = MicroGateCrc.Crc32Ccitt;
+        ReceiveClockComboBox.ItemsSource = Enum.GetValues<MicroGateReceiveClockSource>();
+        ReceiveClockComboBox.SelectedItem = new MicroGateMonitorOptions().ReceiveClockSource;
+        DivisorComboBox.ItemsSource = Enum.GetValues<MicroGatePhaseLockedLoopDivisor>();
+        DivisorComboBox.SelectedItem = new MicroGateMonitorOptions().PhaseLockedLoopDivisor;
+        ClockSpeedTextBox.Text = new MicroGateMonitorOptions().ClockSpeed.ToString(CultureInfo.InvariantCulture);
         FrameListBox.ItemsSource = log;
 
         Loaded += async (_, _) => await RefreshPorts();
@@ -139,8 +144,17 @@ internal sealed partial class MainWindow : Window
             addressFilter = parsed;
         }
 
+        if (!int.TryParse(ClockSpeedTextBox.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int clockSpeed) || clockSpeed < 1)
+        {
+            AppendLog("Clock speed must be a positive whole number.");
+            return null;
+        }
+
         return new MicroGateMonitorOptions
         {
+            ReceiveClockSource = ReceiveClockComboBox.SelectedItem is MicroGateReceiveClockSource clockSource ? clockSource : MicroGateReceiveClockSource.OwnPin,
+            PhaseLockedLoopDivisor = DivisorComboBox.SelectedItem is MicroGatePhaseLockedLoopDivisor divisor ? divisor : MicroGatePhaseLockedLoopDivisor.DivideBy32,
+            ClockSpeed = clockSpeed,
             Encoding = EncodingComboBox.SelectedItem is MicroGateEncoding encoding ? encoding : MicroGateEncoding.Nrz,
             Crc = CrcComboBox.SelectedItem is MicroGateCrc crc ? crc : MicroGateCrc.Crc32Ccitt,
             HardwareAddressFilter = addressFilter,

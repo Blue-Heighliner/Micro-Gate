@@ -40,7 +40,9 @@ internal sealed class WindowsMicroGateMonitorDeviceOpener(IWindowsNative native)
         MghdlcParams parameters = new()
         {
             Mode = MghdlcConstants.ModeHdlc,
+            Flags = (ushort)(MapReceiveClockSource(options.ReceiveClockSource) | MapPhaseLockedLoopDivisor(options.PhaseLockedLoopDivisor)),
             Encoding = MapEncoding(options.Encoding),
+            ClockSpeed = (uint)options.ClockSpeed,
             CrcType = MapCrc(options.Crc),
             Addr = options.HardwareAddressFilter ?? MghdlcConstants.AddressFilterDisabled,
         };
@@ -55,6 +57,23 @@ internal sealed class WindowsMicroGateMonitorDeviceOpener(IWindowsNative native)
             throw new IOException($"Failed to {step}.", new Win32Exception((int)status));
         }
     }
+
+    private ushort MapReceiveClockSource(MicroGateReceiveClockSource value) => value switch
+    {
+        MicroGateReceiveClockSource.OwnPin => 0,
+        MicroGateReceiveClockSource.OtherPin => MghdlcConstants.ReceiveClockOtherPin,
+        MicroGateReceiveClockSource.PhaseLockedLoop => MghdlcConstants.ReceiveClockDpll,
+        MicroGateReceiveClockSource.BaudRateGenerator => MghdlcConstants.ReceiveClockBrg,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private ushort MapPhaseLockedLoopDivisor(MicroGatePhaseLockedLoopDivisor value) => value switch
+    {
+        MicroGatePhaseLockedLoopDivisor.DivideBy32 => 0,
+        MicroGatePhaseLockedLoopDivisor.DivideBy8 => MghdlcConstants.DpllDivisor8,
+        MicroGatePhaseLockedLoopDivisor.DivideBy16 => MghdlcConstants.DpllDivisor16,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 
     private byte MapEncoding(MicroGateEncoding value) => value switch
     {

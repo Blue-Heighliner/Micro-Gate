@@ -23,15 +23,51 @@
 
                         <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
 
-                        <TextBlock Text="SETTINGS" Classes="section-header" />
+                        <TextBlock Text="ADDRESSES" Classes="section-header" />
                         <TextBlock Text="Local address (hex)" Classes="field-label" Margin="0,10,0,4" />
                         <TextBox x:Name="AddressTextBox" Text="01" />
                         <TextBlock Text="Remote address (hex)" Classes="field-label" Margin="0,10,0,4" />
                         <TextBox x:Name="RemoteAddressTextBox" Text="03" />
+
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
+
+                        <TextBlock Text="LINK (MUST MATCH REMOTE)" Classes="section-header" />
                         <TextBlock Text="Encoding" Classes="field-label" Margin="0,10,0,4" />
                         <ComboBox x:Name="EncodingComboBox" HorizontalAlignment="Stretch" />
                         <TextBlock Text="CRC" Classes="field-label" Margin="0,10,0,4" />
                         <ComboBox x:Name="CrcComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Receive clock source" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="ReceiveClockComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Transmit clock source" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="TransmitClockComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Phase locked loop divisor" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="DivisorComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Clock speed (bit/s)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="ClockSpeedTextBox" />
+
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
+
+                        <TextBlock Text="PEER" Classes="section-header" />
+                        <TextBlock Text="Idle pattern" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="IdlePatternComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Preamble pattern" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="PreamblePatternComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Preamble length" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="PreambleLengthComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Underrun action" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="UnderrunComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="Max info field (1-4090 bytes)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="MaxInfoFieldTextBox" />
+                        <TextBlock Text="Transmit window (1-7)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="TransmitWindowTextBox" />
+                        <TextBlock Text="Connect retry interval (s, blank = never)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="RetryIntervalTextBox" />
+                        <TextBlock Text="Retransmit interval (s, blank = never)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="RetransmitIntervalTextBox" />
+                        <TextBlock Text="Max retransmissions (blank = unlimited)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="MaxRetransmissionsTextBox" />
+                        <CheckBox x:Name="DisablePollFinalCheckBox" Content="Disable poll/final bit" Margin="0,10,0,0" />
+                        <CheckBox x:Name="LoopbackCheckBox" Content="Internal loopback" Margin="0,10,0,0" />
 
                         <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
 

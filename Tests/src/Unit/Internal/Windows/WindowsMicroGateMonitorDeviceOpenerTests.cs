@@ -20,6 +20,22 @@ public sealed class WindowsMicroGateMonitorDeviceOpenerTests
     }
 
     [Fact]
+    public void Open_ConfiguresReceiveClockingFromOptions()
+    {
+        MicroGateMonitorOptions options = new()
+        {
+            ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
+            PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy8,
+            ClockSpeed = 9600,
+        };
+        WindowsMicroGateMonitorDeviceOpener opener = new(native.Object);
+
+        opener.Open("COM1", options);
+
+        native.Verify(x => x.SetParams(9, It.Is<MghdlcParams>(p => p.Flags == (MghdlcConstants.ReceiveClockBrg | MghdlcConstants.DpllDivisor8) && p.ClockSpeed == 9600)), Times.Once);
+    }
+
+    [Fact]
     public void Open_ConfiguresPortFromOptionsAndReturnsDevice()
     {
         MicroGateMonitorOptions options = new()

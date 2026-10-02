@@ -24,4 +24,4 @@ Nothing in `MicroGateMonitor` calls `IMicroGateDevice.Write`; the type has no me
 
 ## Platform dispatch
 
-`MicroGateMonitor` (defaulting a null options argument to `new MicroGateMonitorOptions()`) picks the Windows or Linux opener the same way `MicroGatePeer` picks its opener, through an internal constructor taking both, which is how the dispatch is tested without depending on the running operating system.
+`MicroGateMonitor` (defaulting a null options argument to `new MicroGateMonitorOptions()` and rejecting a non-positive `ClockSpeed` with `ArgumentOutOfRangeException`) picks the Windows or Linux opener the same way `MicroGatePeer` picks its opener, through an internal constructor taking both, which is how the dispatch is tested without depending on the running operating system.

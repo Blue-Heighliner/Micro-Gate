@@ -43,6 +43,22 @@ public sealed class LinuxMicroGateMonitorDeviceOpenerTests
     }
 
     [Fact]
+    public void Open_ConfiguresReceiveClockingFromOptions()
+    {
+        MicroGateMonitorOptions options = new()
+        {
+            ReceiveClockSource = MicroGateReceiveClockSource.PhaseLockedLoop,
+            PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+            ClockSpeed = 9600,
+        };
+        LinuxMicroGateMonitorDeviceOpener opener = new(native.Object);
+
+        opener.Open("ttySLG0", options);
+
+        native.Verify(x => x.SetParams(7, It.Is<SynclinkParams>(p => p.Flags == (SynclinkConstants.ReceiveClockDpll | SynclinkConstants.DpllDivisor16) && p.ClockSpeed == 9600)), Times.Once);
+    }
+
+    [Fact]
     public void Open_NeverEnablesTheTransmitterOrSetsATransmitIdlePattern()
     {
         LinuxMicroGateMonitorDeviceOpener opener = new(native.Object);

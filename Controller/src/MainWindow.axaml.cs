@@ -16,14 +16,35 @@ internal sealed partial class MainWindow : Window
         this.peerFactory = peerFactory;
         InitializeComponent();
 
-        EncodingComboBox.ItemsSource = Enum.GetValues<MicroGateEncoding>();
-        EncodingComboBox.SelectedItem = MicroGateEncoding.Nrz;
-        CrcComboBox.ItemsSource = Enum.GetValues<MicroGateCrc>();
-        CrcComboBox.SelectedItem = MicroGateCrc.Crc32Ccitt;
+        MicroGatePeerOptions defaults = new();
+        Fill(EncodingComboBox, defaults.Link.Encoding);
+        Fill(CrcComboBox, defaults.Link.Crc);
+        Fill(ReceiveClockComboBox, defaults.Link.ReceiveClockSource);
+        Fill(TransmitClockComboBox, defaults.Link.TransmitClockSource);
+        Fill(DivisorComboBox, defaults.Link.PhaseLockedLoopDivisor);
+        Fill(IdlePatternComboBox, defaults.IdlePattern);
+        Fill(PreamblePatternComboBox, defaults.PreamblePattern);
+        Fill(PreambleLengthComboBox, defaults.PreambleLength);
+        Fill(UnderrunComboBox, defaults.UnderrunAction);
+        ClockSpeedTextBox.Text = defaults.Link.ClockSpeed.ToString(CultureInfo.InvariantCulture);
+        MaxInfoFieldTextBox.Text = defaults.MaxInfoField.ToString(CultureInfo.InvariantCulture);
+        TransmitWindowTextBox.Text = defaults.TransmitWindow.ToString(CultureInfo.InvariantCulture);
+        RetryIntervalTextBox.Text = FormatSeconds(defaults.RetryInterval);
+        RetransmitIntervalTextBox.Text = FormatSeconds(defaults.RetransmitInterval);
+        MaxRetransmissionsTextBox.Text = defaults.MaxRetransmissions?.ToString(CultureInfo.InvariantCulture);
+        DisablePollFinalCheckBox.IsChecked = defaults.DisablePollFinalBit;
+        LoopbackCheckBox.IsChecked = defaults.Loopback;
+        MaxInfoFieldTextBox.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(MaxInfoFieldTextBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int size) && size is >= 1 and <= 4090)
+            {
+                SendGrid.MaxCells = size;
+            }
+        };
         InputModeComboBox.ItemsSource = new[] { "ASCII", "Raw values" };
         InputModeComboBox.SelectedIndex = 0;
         SendGrid.Cells = [];
-        SendGrid.MaxCells = new MicroGatePeerOptions().MaxInfoField;
+        SendGrid.MaxCells = defaults.MaxInfoField;
         SendGrid.Edited += (_, _) => UpdateSendCount();
         SendGrid.SubmitRequested += async (_, _) => await Send();
         LogListBox.ItemsSource = log;
@@ -90,14 +111,10 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        MicroGatePeerOptions options = new()
+        if (BuildOptions() is not { } options)
         {
-            Link = new MicroGateLinkOptions
-            {
-                Encoding = EncodingComboBox.SelectedItem is MicroGateEncoding encoding ? encoding : MicroGateEncoding.Nrz,
-                Crc = CrcComboBox.SelectedItem is MicroGateCrc crc ? crc : MicroGateCrc.Crc32Ccitt,
-            },
-        };
+            return;
+        }
 
         IMicroGatePeer newPeer = peerFactory.Create();
         newPeer.Receiver = OnReceived;
@@ -129,6 +146,95 @@ internal sealed partial class MainWindow : Window
         }
 
         UpdateState();
+    }
+
+    private MicroGatePeerOptions? BuildOptions()
+    {
+        if (!TryParseInt(ClockSpeedTextBox, "Clock speed", 1, int.MaxValue, out int clockSpeed)
+            || !TryParseInt(MaxInfoFieldTextBox, "Max info field", 1, 4090, out int maxInfoField)
+            || !TryParseInt(TransmitWindowTextBox, "Transmit window", 1, 7, out int transmitWindow)
+            || !TryParseSeconds(RetryIntervalTextBox, "Connect retry interval", out TimeSpan? retryInterval)
+            || !TryParseSeconds(RetransmitIntervalTextBox, "Retransmit interval", out TimeSpan? retransmitInterval))
+        {
+            return null;
+        }
+
+        int? maxRetransmissions = null;
+        if (!string.IsNullOrWhiteSpace(MaxRetransmissionsTextBox.Text))
+        {
+            if (!TryParseInt(MaxRetransmissionsTextBox, "Max retransmissions", 0, int.MaxValue, out int parsed))
+            {
+                return null;
+            }
+
+            maxRetransmissions = parsed;
+        }
+
+        return new MicroGatePeerOptions
+        {
+            Link = new MicroGateLinkOptions
+            {
+                Encoding = Pick<MicroGateEncoding>(EncodingComboBox),
+                Crc = Pick<MicroGateCrc>(CrcComboBox),
+                ReceiveClockSource = Pick<MicroGateReceiveClockSource>(ReceiveClockComboBox),
+                TransmitClockSource = Pick<MicroGateTransmitClockSource>(TransmitClockComboBox),
+                PhaseLockedLoopDivisor = Pick<MicroGatePhaseLockedLoopDivisor>(DivisorComboBox),
+                ClockSpeed = clockSpeed,
+            },
+            IdlePattern = Pick<MicroGateIdlePattern>(IdlePatternComboBox),
+            PreamblePattern = Pick<MicroGatePreamblePattern>(PreamblePatternComboBox),
+            PreambleLength = Pick<MicroGatePreambleLength>(PreambleLengthComboBox),
+            UnderrunAction = Pick<MicroGateUnderrunAction>(UnderrunComboBox),
+            DisablePollFinalBit = DisablePollFinalCheckBox.IsChecked == true,
+            MaxInfoField = maxInfoField,
+            RetryInterval = retryInterval,
+            RetransmitInterval = retransmitInterval,
+            MaxRetransmissions = maxRetransmissions,
+            TransmitWindow = transmitWindow,
+            Loopback = LoopbackCheckBox.IsChecked == true,
+        };
+    }
+
+    private void Fill<T>(ComboBox box, T selected)
+        where T : struct, Enum
+    {
+        box.ItemsSource = Enum.GetValues<T>();
+        box.SelectedItem = selected;
+    }
+
+    private T Pick<T>(ComboBox box)
+        where T : struct, Enum => box.SelectedItem is T value ? value : default;
+
+    private string FormatSeconds(TimeSpan? interval) => interval?.TotalSeconds.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private bool TryParseInt(TextBox box, string name, int min, int max, out int value)
+    {
+        if (int.TryParse(box.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out value) && value >= min && value <= max)
+        {
+            return true;
+        }
+
+        AppendMessage(max == int.MaxValue ? $"{name} must be a whole number of at least {min}." : $"{name} must be a whole number from {min} to {max}.");
+        return false;
+    }
+
+    private bool TryParseSeconds(TextBox box, string name, out TimeSpan? value)
+    {
+        value = null;
+        string text = box.Text?.Trim() ?? string.Empty;
+        if (text.Length == 0)
+        {
+            return true;
+        }
+
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds > 0 && seconds < 86400)
+        {
+            value = TimeSpan.FromSeconds(seconds);
+            return true;
+        }
+
+        AppendMessage($"{name} must be a positive number of seconds, or blank for none.");
+        return false;
     }
 
     private async Task Release(IMicroGatePeer released)

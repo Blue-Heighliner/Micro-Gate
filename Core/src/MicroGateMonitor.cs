@@ -51,6 +51,7 @@ public interface IMicroGateMonitor : IDisposable, IAsyncDisposable
     /// <param name="options">The physical layer settings to apply, or <see langword="null"/> to use the defaults.</param>
     /// <param name="cancellation">A token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the device is open and being read.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="MicroGateMonitorOptions.ClockSpeed"/> is not positive.</exception>
     /// <exception cref="PlatformNotSupportedException">The current operating system is neither Windows nor Linux.</exception>
     /// <exception cref="InvalidOperationException">The monitor has already been started or has been disposed.</exception>
     /// <exception cref="IOException">The device could not be opened.</exception>
@@ -127,6 +128,7 @@ public sealed class MicroGateMonitor : IMicroGateMonitor
     public async ValueTask Start(string portName, MicroGateMonitorOptions? options = null, CancellationToken cancellation = default)
     {
         options ??= new();
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ClockSpeed, 0);
         IMicroGateMonitorDeviceOpener selectedOpener = SelectOpener();
 
         lock (stateLock)

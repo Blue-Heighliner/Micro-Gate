@@ -31,6 +31,19 @@ public sealed class MicroGateMonitorTests : IDisposable
         await monitor.DisposeAsync();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Start_WithNonPositiveClockSpeed_ThrowsAndLeavesMonitorIdle(int clockSpeed)
+    {
+        await using MicroGateMonitor monitor = harness.CreateMonitor();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await monitor.Start("port", new MicroGateMonitorOptions { ClockSpeed = clockSpeed }));
+
+        Assert.Equal(MicroGateMonitorState.Idle, monitor.State);
+        harness.Opener.Verify(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGateMonitorOptions>()), Times.Never);
+    }
+
     [Fact]
     public async Task Start_WithoutOptions_UsesDefaults()
     {

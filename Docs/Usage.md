@@ -163,7 +163,7 @@ monitor.Received.Subscribe(frame => Console.WriteLine($"{frame.Kind} from 0x{fra
 await monitor.Start("ttySLG0");
 ```
 
-`monitor` never writes to the device: it reports every frame it sees, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their information frames. Options are the same physical layer settings as a peer's (`Encoding`, `Crc`, `HardwareAddressFilter`); there is nothing HDLC-layer to configure, since a monitor never forms a connection.
+`monitor` never writes to the device: it reports every frame it sees, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their information frames. Options are the receive side physical layer settings of a peer's (`Encoding`, `Crc`, `ReceiveClockSource`, `PhaseLockedLoopDivisor`, `ClockSpeed`) plus `HardwareAddressFilter`; there is nothing HDLC-layer to configure, since a monitor never forms a connection.
 
 ## Handle a frame the monitor could not decode
 
