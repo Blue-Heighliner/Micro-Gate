@@ -92,6 +92,13 @@ internal interface IWindowsNative
     int Write(nint handle, byte[] buffer);
 
     /// <summary>
+    /// Waits for everything written to be transmitted.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a nonzero value on failure.</returns>
+    int WaitAllSent(nint handle);
+
+    /// <summary>
     /// Enumerates the installed SyncLink ports.
     /// </summary>
     /// <returns>One entry per installed port.</returns>
@@ -147,6 +154,10 @@ internal sealed class WindowsNative : IWindowsNative
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]
     public int Write(nint handle, byte[] buffer) => Mghdlc.MgslWrite(handle, buffer, buffer.Length);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public int WaitAllSent(nint handle) => Mghdlc.MgslWaitAllSent(handle);
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]

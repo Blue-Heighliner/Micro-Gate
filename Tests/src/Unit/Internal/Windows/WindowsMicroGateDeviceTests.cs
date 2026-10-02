@@ -26,6 +26,17 @@ public sealed class WindowsMicroGateDeviceTests
     }
 
     [Fact]
+    public void Write_WaitsForFrameToBeSent()
+    {
+        native.Setup(x => x.Write(9, It.IsAny<byte[]>())).Returns(2);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.Write(new byte[] { 1, 2 });
+
+        native.Verify(x => x.WaitAllSent(9), Times.Once);
+    }
+
+    [Fact]
     public void Write_WhenShort_Throws()
     {
         native.Setup(x => x.Write(9, It.IsAny<byte[]>())).Returns(0);

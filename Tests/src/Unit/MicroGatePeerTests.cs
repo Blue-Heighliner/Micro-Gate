@@ -115,6 +115,29 @@ public sealed class MicroGatePeerTests : IDisposable
     }
 
     [Fact]
+    public async Task Connect_WhenCanceledWhileTheRequestWriteBlocks_ThrowsAndDisconnects()
+    {
+        MicroGatePeer peer = harness.CreatePeer(TimeSpan.FromMilliseconds(200));
+        using CancellationTokenSource cancellation = new();
+        ManualResetEventSlim release = new();
+        ManualResetEventSlim writing = new();
+        harness.Device.Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>())).Callback(() =>
+        {
+            writing.Set();
+            release.Wait(timeout);
+        });
+        harness.Device.Setup(x => x.Dispose()).Callback(release.Set);
+
+        Task connecting = peer.StartAndConnect("port", harness.Address, harness.RemoteAddress, harness.Options, cancellation.Token).AsTask();
+        Assert.True(writing.Wait(timeout));
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => connecting.WaitAsync(timeout));
+        Assert.Equal(MicroGatePeerState.Disconnected, peer.State);
+        harness.Device.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
     public async Task Start_WhenCanceledBeforeDeviceOpens_Throws()
     {
         await using MicroGatePeer peer = harness.CreatePeer();

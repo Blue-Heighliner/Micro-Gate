@@ -493,7 +493,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         {
             if (options.RetryInterval is not null)
             {
-                await Task.Run(() => WriteFrame(CreateConnectRequest), cancellation).ConfigureAwait(false);
+                await Task.Run(() => WriteFrame(CreateConnectRequest)).WaitAsync(cancellation).ConfigureAwait(false);
             }
 
             try
@@ -558,6 +558,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         }
         catch (TimeoutException)
         {
+            opened.DisableTransmitter();
         }
 
         opened.Dispose();

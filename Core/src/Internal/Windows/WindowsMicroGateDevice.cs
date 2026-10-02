@@ -21,6 +21,8 @@ internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle)
         {
             throw new IOException("Failed to write the frame to the device.");
         }
+
+        native.WaitAllSent(handle);
     }
 
     /// <inheritdoc />

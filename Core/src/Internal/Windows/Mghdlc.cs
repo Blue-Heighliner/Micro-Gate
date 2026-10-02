@@ -88,6 +88,15 @@ internal static partial class Mghdlc
     public static partial int MgslWrite(nint handle, byte[] buffer, int size);
 
     /// <summary>
+    /// Blocks until everything written has been transmitted, per <c>MgslWaitAllSent</c>.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a nonzero value on failure.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslWaitAllSent")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial int MgslWaitAllSent(nint handle);
+
+    /// <summary>
     /// Blocks until an entire HDLC frame has been read, per <c>MgslRead</c>.
     /// </summary>
     /// <param name="handle">The device handle.</param>
