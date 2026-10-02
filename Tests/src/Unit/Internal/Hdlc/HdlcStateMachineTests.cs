@@ -3,7 +3,7 @@ namespace BlueHeighliner.MicroGate;
 public sealed class HdlcStateMachineTests
 {
     private MicroGatePeerOptions Options(bool disablePollFinal = false) =>
-        new() { DisablePollFinalBit = disablePollFinal };
+        new() { DisablePollFinalBit = disablePollFinal, AcknowledgeDelay = TimeSpan.Zero };
 
     private (HdlcStateMachine Local, HdlcStateMachine Remote) EstablishConnectedPair(MicroGatePeerOptions options)
     {
@@ -26,8 +26,71 @@ public sealed class HdlcStateMachineTests
 
         Assert.Equal(HdlcConnectionState.Connecting, machine.State);
         Assert.Equal(HdlcFrameKind.SetAsynchronousBalancedMode, frame.Kind);
-        Assert.True(frame.PollFinal);
-        Assert.Equal(0x12, frame.Address);
+        Assert.False(frame.PollFinal);
+        Assert.Equal(0xFF, frame.Address);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Receive_SabmToTheBroadcastAddress_ConnectsAndAnswersWithTheLocalAddress(bool poll)
+    {
+        HdlcStateMachine machine = new(Options(), 0x11, 0x12);
+
+        HdlcReceiveResult result = machine.Receive(new HdlcFrame { Address = 0xFF, Kind = HdlcFrameKind.SetAsynchronousBalancedMode, PollFinal = poll }.ToArray());
+
+        Assert.Equal(HdlcConnectionState.Connected, machine.State);
+        HdlcFrame ua = HdlcFrame.Parse(result.Response!.Value);
+        Assert.Equal(HdlcFrameKind.UnnumberedAcknowledge, ua.Kind);
+        Assert.Equal(0x11, ua.Address);
+        Assert.Equal(poll, ua.PollFinal);
+    }
+
+    [Fact]
+    public void Receive_DisconnectToTheBroadcastAddress_DisconnectsAndAnswersWithTheLocalAddress()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair(Options());
+
+        HdlcReceiveResult result = local.Receive(new HdlcFrame { Address = 0xFF, Kind = HdlcFrameKind.Disconnect, PollFinal = false }.ToArray());
+
+        Assert.Equal(HdlcConnectionState.Disconnected, local.State);
+        HdlcFrame answer = HdlcFrame.Parse(result.Response!.Value);
+        Assert.Equal(HdlcFrameKind.UnnumberedAcknowledge, answer.Kind);
+        Assert.Equal(0x11, answer.Address);
+    }
+
+    [Fact]
+    public void Receive_AnInformationFrameToTheBroadcastAddress_IsAcceptedAndAnsweredWithTheLocalAddress()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair(Options());
+
+        HdlcReceiveResult result = local.Receive(new HdlcFrame { Address = 0xFF, Kind = HdlcFrameKind.Information, PollFinal = false, SendSequence = 0, ReceiveSequence = 0, Payload = new byte[] { 1 } }.ToArray());
+
+        Assert.Equal(new byte[] { 1 }, result.Payload!.Value.ToArray());
+        Assert.Equal(0x11, HdlcFrame.Parse(result.Response!.Value).Address);
+    }
+
+    [Fact]
+    public void Receive_APollToTheBroadcastAddress_IsAnsweredWithAFinalResponseCarryingTheLocalAddress()
+    {
+        (HdlcStateMachine local, _) = EstablishConnectedPair(Options());
+
+        HdlcReceiveResult result = local.Receive(new HdlcFrame { Address = 0xFF, Kind = HdlcFrameKind.ReceiveReady, PollFinal = true, ReceiveSequence = 0 }.ToArray());
+
+        HdlcFrame answer = HdlcFrame.Parse(result.Response!.Value);
+        Assert.Equal(0x11, answer.Address);
+        Assert.True(answer.PollFinal);
+    }
+
+    [Fact]
+    public void Receive_AResponseToTheBroadcastAddress_IsNotTreatedAsAnAnswer()
+    {
+        HdlcStateMachine machine = new(Options(), 0x11, 0x12);
+        machine.CreateConnect();
+
+        machine.Receive(new HdlcFrame { Address = 0xFF, Kind = HdlcFrameKind.UnnumberedAcknowledge, PollFinal = false }.ToArray());
+
+        Assert.Equal(HdlcConnectionState.Connecting, machine.State);
     }
 
     [Fact]
@@ -298,13 +361,13 @@ public sealed class HdlcStateMachineTests
     }
 
     [Fact]
-    public void Addressing_CommandsCarryTheRemoteAddressAndResponsesTheLocalOne()
+    public void Addressing_ConnectRequestsGoToEveryoneAndOtherCommandsToTheRemoteAddressAndResponsesCarryTheLocalOne()
     {
-        HdlcStateMachine stationA = new(new(), 0x01, 0x03);
-        HdlcStateMachine stationB = new(new(), 0x03, 0x01);
+        HdlcStateMachine stationA = new(Options(), 0x01, 0x03);
+        HdlcStateMachine stationB = new(Options(), 0x03, 0x01);
 
         ReadOnlyMemory<byte> sabm = stationA.CreateConnect();
-        Assert.Equal(0x03, HdlcFrame.Parse(sabm).Address);
+        Assert.Equal(0xFF, HdlcFrame.Parse(sabm).Address);
 
         HdlcReceiveResult atB = stationB.Receive(sabm);
         HdlcFrame ua = HdlcFrame.Parse(atB.Response!.Value);

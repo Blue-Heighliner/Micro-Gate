@@ -33,22 +33,7 @@ public sealed class MicroGatePeerIntegrationTests : IDisposable
 
         await Assert.ThrowsAsync<IOException>(async () => await peer.StartAndConnect(file, 0x06, 0x05, new MicroGatePeerOptions()));
 
-        Assert.Equal(new byte[] { 0x05, 0x2F }, await File.ReadAllBytesAsync(file));
-    }
-
-    [Fact]
-    public async Task Start_WithPollFinalEnabled_SendsSabmWithPollBit()
-    {
-        if (!OperatingSystem.IsLinux())
-        {
-            return;
-        }
-
-        IMicroGatePeer peer = CreateTolerantPeer();
-
-        await Assert.ThrowsAsync<IOException>(async () => await peer.StartAndConnect(file, 0x06, 0x05, new MicroGatePeerOptions { DisablePollFinalBit = false }));
-
-        Assert.Equal(new byte[] { 0x05, 0x3F }, await File.ReadAllBytesAsync(file));
+        Assert.Equal(new byte[] { 0xFF, 0x2F }, await File.ReadAllBytesAsync(file));
     }
 
     [Fact]

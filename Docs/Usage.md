@@ -109,19 +109,19 @@ peer.StateChanged.Subscribe(
 
 `StateChanged` completes when the peer becomes `Disconnected`, whether the remote peer disconnected, the device was lost, or the peer was disposed.
 
-## Enable the poll/final bit
+## Disable the poll/final bit
 
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { DisablePollFinalBit = false };
+MicroGatePeerOptions options = new() { DisablePollFinalBit = true };
 
 await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
 await peer.Start("ttySLG0", options);
 await peer.Connect(0x01, 0x03);
 ```
 
-`DisablePollFinalBit` is `true` by default, so every frame the station sends has the poll/final bit at 0, including acknowledgements to a peer frame that had it set. Set it to `false` for a remote peer that expects the bit to reflect the frame's actual role.
+The poll/final bit is used by default only where the procedures need it: a poll is answered with a final response, and data left unacknowledged is chased with a poll. `DisablePollFinalBit = true` keeps it at 0 on every frame the station sends, for a remote peer that cannot cope with it, at the cost that such a peer cannot poll this one and unacknowledged data is simply sent again.
 
 ## Configure the device
 

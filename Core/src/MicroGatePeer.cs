@@ -71,7 +71,7 @@ public interface IMicroGatePeer : IDisposable, IAsyncDisposable
     /// Forms the HDLC connection with the remote peer, completing once it is up. The peer becomes <see cref="MicroGatePeerState.Connecting"/>, enables the device's transmitter, sends connection requests at <see cref="MicroGatePeerOptions.RetryInterval"/> (none if that is <see langword="null"/>) and also accepts a request from the remote peer, so the two sides need no fixed initiator.
     /// </summary>
     /// <param name="address">The HDLC address of this station: carried by every response it sends and expected on every command it receives. Must match the address the remote station sends its commands to.</param>
-    /// <param name="remoteAddress">The HDLC address of the remote station: carried by every command this station sends and expected on every response it receives. Must match the remote station's own address, and differ from <paramref name="address"/>. ADCCP and HDLC identify the sender of a response and the receiver of a command through it, so a link always needs two different addresses.</param>
+    /// <param name="remoteAddress">The HDLC address of the remote station: carried by every command this station sends except the connection request, which goes to the all-stations address <c>0xFF</c>, and expected on every response it receives. Must match the remote station's own address, and differ from <paramref name="address"/>. ADCCP and HDLC identify the sender of a response and the receiver of a command through it, so a link always needs two different addresses.</param>
     /// <param name="cancellation">A token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask"/> that completes once the peer is <see cref="MicroGatePeerState.Connected"/>.</returns>
     /// <exception cref="ArgumentException"><paramref name="address"/> and <paramref name="remoteAddress"/> are the same. The peer stays <see cref="MicroGatePeerState.Ready"/>.</exception>
@@ -172,6 +172,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private readonly TimeSpan maxInterval = TimeSpan.FromMilliseconds(int.MaxValue);
     private MicroGatePeerOptions options = new();
     private TaskCompletionSource? peerBusyGate;
+    private Timer? acknowledgementTimer;
     private IHdlcStateMachine? stateMachine;
     private SemaphoreSlim? sendWindow;
     private IMicroGateDevice? device;
@@ -185,6 +186,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private int retransmitAttempts;
     private int notifyingThreadId;
     private int inboundPending;
+    private bool acknowledgementTimerArmed;
     private bool started;
     private bool transmitterEnabled;
     private bool finished;
@@ -301,6 +303,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
             HdlcStateMachine machine = new(options, address, remoteAddress);
             sendWindow = new SemaphoreSlim(machine.WindowSize, machine.WindowSize);
+            acknowledgementTimer = new Timer(_ => SendAcknowledgement());
             Volatile.Write(ref stateMachine, machine);
             SetState(MicroGatePeerState.Connecting);
         }
@@ -453,6 +456,11 @@ public sealed class MicroGatePeer : IMicroGatePeer
         if (candidate.MaxInfoField < 1 || candidate.MaxInfoField > maxInfoField)
         {
             throw new ArgumentOutOfRangeException("options", $"The maximum info field size must be between 1 and {maxInfoField} bytes.");
+        }
+
+        if (candidate.AcknowledgeDelay < TimeSpan.Zero || candidate.AcknowledgeDelay > maxInterval)
+        {
+            throw new ArgumentOutOfRangeException("options", "The acknowledge delay must be zero or greater and at most int.MaxValue milliseconds.");
         }
 
         if (candidate.Link.ClockSpeed <= 0)
@@ -757,6 +765,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
                 }
 
                 UpdatePeerBusy(Protocol(() => Machine.PeerBusy));
+                ScheduleAcknowledgement();
 
                 if (result.Payload is { } payload && Receiver is not null)
                 {
@@ -927,6 +936,48 @@ public sealed class MicroGatePeer : IMicroGatePeer
     private IReadOnlyList<ReadOnlyMemory<byte>> CreateRetransmission() =>
         Protocol(() => Machine.State == HdlcConnectionState.Connected ? Machine.CreateRetransmission() : []);
 
+    private void ScheduleAcknowledgement()
+    {
+        bool arm = Protocol(() =>
+        {
+            if (acknowledgementTimerArmed || stateMachine is not { AcknowledgementPending: true })
+            {
+                return false;
+            }
+
+            acknowledgementTimerArmed = true;
+            return true;
+        });
+
+        if (arm)
+        {
+            acknowledgementTimer?.Change(options.AcknowledgeDelay, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    private void SendAcknowledgement()
+    {
+        try
+        {
+            Protocol(() =>
+            {
+                acknowledgementTimerArmed = false;
+                return 0;
+            });
+            WriteFrame(() => Protocol(() => stateMachine?.CreateAcknowledgement() ?? default));
+        }
+        catch (Exception exception) when (!IsDisposed())
+        {
+            Fail(exception);
+        }
+        catch
+        {
+        }
+    }
+
+    private IReadOnlyList<ReadOnlyMemory<byte>> CreateTimeoutRecovery() =>
+        Protocol(() => Machine.State == HdlcConnectionState.Connected ? Machine.CreateTimeoutRecovery() : []);
+
     private async Task Retransmit()
     {
         TimeSpan interval = options.RetransmitInterval!.Value;
@@ -962,7 +1013,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
 
                 if (resend)
                 {
-                    WriteFrames(CreateRetransmission);
+                    WriteFrames(CreateTimeoutRecovery);
                     RestartAcknowledgementTimer();
                 }
             }
@@ -1159,6 +1210,7 @@ public sealed class MicroGatePeer : IMicroGatePeer
         }
 
         delivery.Writer.TryComplete();
+        acknowledgementTimer?.Dispose();
         lifetime.Cancel();
         Protocol(() =>
         {

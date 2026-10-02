@@ -4,7 +4,7 @@ internal sealed class DeviceHarness : IDisposable
 {
     public DeviceHarness(MicroGatePeerOptions? options = null)
     {
-        Options = options ?? new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null };
+        Options = options ?? new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.Zero };
 
         Device
             .Setup(x => x.Read(It.IsAny<byte[]>()))

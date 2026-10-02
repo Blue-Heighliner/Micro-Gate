@@ -37,6 +37,7 @@ internal sealed partial class MainWindow : Window
         RetryIntervalTextBox.Text = FormatSeconds(defaults.RetryInterval);
         RetransmitIntervalTextBox.Text = FormatSeconds(defaults.RetransmitInterval);
         MaxRetransmissionsTextBox.Text = defaults.MaxRetransmissions?.ToString(CultureInfo.InvariantCulture);
+        AcknowledgeDelayTextBox.Text = FormatSeconds(defaults.AcknowledgeDelay);
         DisablePollFinalCheckBox.IsChecked = defaults.DisablePollFinalBit;
         LoopbackCheckBox.IsChecked = defaults.Loopback;
         MaxInfoFieldTextBox.TextChanged += (_, _) =>
@@ -77,6 +78,8 @@ internal sealed partial class MainWindow : Window
     private readonly int maxLogEntries = 5000;
     private ControllerMode mode = ControllerMode.Peer;
     private CancellationTokenSource? connectCancellation;
+    private string firstName = "A";
+    private string secondName = "B";
     private int firstCount;
     private int secondCount;
 
@@ -133,6 +136,8 @@ internal sealed partial class MainWindow : Window
 
         firstCount = 0;
         secondCount = 0;
+        firstName = portName;
+        secondName = PortBComboBox.SelectedItem as string ?? string.Empty;
         UpdateCounts();
 
         switch (mode)
@@ -208,17 +213,17 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        IMicroGatePeer first = Open(portName, "A: ");
-        IMicroGatePeer second = Open(portNameB, "B: ");
+        IMicroGatePeer first = Open(portName, $"{portName}: ");
+        IMicroGatePeer second = Open(portNameB, $"{portNameB}: ");
         Channel<byte[]> firstToSecond = Channel.CreateUnbounded<byte[]>();
         Channel<byte[]> secondToFirst = Channel.CreateUnbounded<byte[]>();
         relays.Add(firstToSecond);
         relays.Add(secondToFirst);
-        subscriptions.Add(first.Monitored.Subscribe(frame => OnRelayed(frame, "A > B", true, firstToSecond)));
-        subscriptions.Add(second.Monitored.Subscribe(frame => OnRelayed(frame, "B > A", false, secondToFirst)));
-        _ = Relay(firstToSecond.Reader, second, "A > B");
-        _ = Relay(secondToFirst.Reader, first, "B > A");
-        AppendMessage($"Passing through between {portName} (A) and {portNameB} (B)...");
+        subscriptions.Add(first.Monitored.Subscribe(frame => OnRelayed(frame, $"{portName} > {portNameB}", true, firstToSecond)));
+        subscriptions.Add(second.Monitored.Subscribe(frame => OnRelayed(frame, $"{portNameB} > {portName}", false, secondToFirst)));
+        _ = Relay(firstToSecond.Reader, second, $"{portName} > {portNameB}");
+        _ = Relay(secondToFirst.Reader, first, $"{portNameB} > {portName}");
+        AppendMessage($"Passing through between {portName} and {portNameB}...");
 
         if (await StartAll([(first, portName), (second, portNameB)], options with { EnableMonitor = true }))
         {
@@ -383,7 +388,7 @@ internal sealed partial class MainWindow : Window
     {
         ControllerMode.Peer => $"{firstCount} received, {secondCount} sent",
         ControllerMode.Monitor => firstCount == 1 ? "1 frame" : $"{firstCount} frames",
-        _ => $"{firstCount} A > B, {secondCount} B > A",
+        _ => $"{firstCount} {firstName} > {secondName}, {secondCount} {secondName} > {firstName}",
     };
 
     private MicroGatePeerOptions? BuildOptions()
@@ -394,6 +399,7 @@ internal sealed partial class MainWindow : Window
         TimeSpan? retryInterval = defaults.RetryInterval;
         TimeSpan? retransmitInterval = defaults.RetransmitInterval;
         int? maxRetransmissions = defaults.MaxRetransmissions;
+        TimeSpan acknowledgeDelay = defaults.AcknowledgeDelay;
 
         if (!TryParseInt(ClockSpeedTextBox, "Clock speed", 1, int.MaxValue, out int clockSpeed))
         {
@@ -405,7 +411,8 @@ internal sealed partial class MainWindow : Window
             if (!TryParseInt(MaxInfoFieldTextBox, "Max info field", 1, 4090, out maxInfoField)
                 || !TryParseInt(TransmitWindowTextBox, "Transmit window", 1, 7, out transmitWindow)
                 || !TryParseSeconds(RetryIntervalTextBox, "Connect retry interval", out retryInterval)
-                || !TryParseSeconds(RetransmitIntervalTextBox, "Retransmit interval", out retransmitInterval))
+                || !TryParseSeconds(RetransmitIntervalTextBox, "Retransmit interval", out retransmitInterval)
+                || !TryParseDelay(AcknowledgeDelayTextBox, "Acknowledge delay", out acknowledgeDelay))
             {
                 return null;
             }
@@ -442,6 +449,7 @@ internal sealed partial class MainWindow : Window
             RetryInterval = retryInterval,
             RetransmitInterval = retransmitInterval,
             MaxRetransmissions = maxRetransmissions,
+            AcknowledgeDelay = acknowledgeDelay,
             TransmitWindow = transmitWindow,
             Loopback = mode == ControllerMode.Peer && LoopbackCheckBox.IsChecked == true,
         };
@@ -467,6 +475,19 @@ internal sealed partial class MainWindow : Window
         }
 
         AppendMessage(max == int.MaxValue ? $"{name} must be a whole number of at least {min}." : $"{name} must be a whole number from {min} to {max}.");
+        return false;
+    }
+
+    private bool TryParseDelay(TextBox box, string name, out TimeSpan value)
+    {
+        value = TimeSpan.Zero;
+        if (double.TryParse(box.Text?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds >= 0 && seconds < 86400)
+        {
+            value = TimeSpan.FromSeconds(seconds);
+            return true;
+        }
+
+        AppendMessage($"{name} must be a number of seconds, zero or more.");
         return false;
     }
 

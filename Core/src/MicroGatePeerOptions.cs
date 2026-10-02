@@ -34,12 +34,12 @@ public sealed record MicroGatePeerOptions
     public MicroGateUnderrunAction UnderrunAction { get; init; } = MicroGateUnderrunAction.Abort7;
 
     /// <summary>
-    /// Gets a value indicating whether the poll/final bit is disabled, so that it is always zero. Defaults to <see langword="true"/>. Visible on the line; the remote station need not match it, but ADCCP and HDLC stations that poll and wait for a final response only work with it set to <see langword="false"/>.
+    /// Gets a value indicating whether the poll/final bit is disabled, so that it is always zero. Defaults to <see langword="false"/>. Visible on the line; the remote station need not match it, but stations that poll and wait for a final response only work with it set to <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// When <see langword="true"/>, the control byte of every HDLC frame sent leaves the poll/final bit at 0, regardless of the frame's role or the poll/final bit of the frame being answered.
+    /// When <see langword="false"/> the bit is only used where the procedures need it: a response mirrors the poll bit of the frame it answers (so a poll is answered with a final response), and when sent data goes unacknowledged for <see cref="RetransmitInterval"/> the remote station is polled with an RR command rather than having every frame sent again. When <see langword="true"/>, the control byte of every HDLC frame sent leaves the bit at 0, regardless of the frame's role or the bit of the frame being answered, and unacknowledged frames are simply sent again.
     /// </remarks>
-    public bool DisablePollFinalBit { get; init; } = true;
+    public bool DisablePollFinalBit { get; init; }
 
     /// <summary>
     /// Gets the largest payload, in bytes, that may be sent in one information frame, from 1 to 4090 (the MicroGate drivers discard received frames larger than 4096 bytes, and a frame also carries an address, a control field, and a frame check sequence). Defaults to 1500. Must not exceed the largest frame the remote station can receive, which discards larger ones without telling this station; a smaller value is always safe. Devices can deliver less than the driver's 4096-byte limit: the SyncLink USB devices this was tested on delivered frames of up to 3176 bytes of payload and silently lost larger ones, so a link that includes such a device needs a value no higher than that.
@@ -55,12 +55,17 @@ public sealed record MicroGatePeerOptions
     public TimeSpan? RetryInterval { get; init; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Gets how long sent data may go unacknowledged before every unacknowledged information frame is sent again, or <see langword="null"/> to only send frames again when the remote peer rejects them. Defaults to one second. Not negotiated, so any value interoperates. The time counts from when a frame has finished being transmitted, and not while a frame is being transmitted or received, so it only needs to cover the remote station's time to answer; one shorter than that sends duplicates the remote station must discard.
+    /// Gets how long sent data may go unacknowledged before the remote station is polled for what it has received, which sends every unacknowledged information frame again if it has not received them (or, with <see cref="DisablePollFinalBit"/>, before every unacknowledged frame is simply sent again), or <see langword="null"/> to only send frames again when the remote peer rejects them. Defaults to one second. Not negotiated, so any value interoperates. The time counts from when a frame has finished being transmitted, and not while a frame is being transmitted or received, so it only needs to cover the remote station's time to answer; one shorter than that sends duplicates the remote station must discard.
     /// </summary>
     /// <remarks>
     /// A frame lost on the line is normally recovered when the next frame arrives and the remote peer rejects the gap. The interval covers the case where nothing follows the lost frame, or the rejection itself is lost.
     /// </remarks>
     public TimeSpan? RetransmitInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Gets how long a received information frame may wait for an information frame of this station's own to carry its acknowledgement before a separate RR is sent, or <see cref="TimeSpan.Zero"/> to acknowledge every frame at once. Defaults to 200 milliseconds. Visible on the line: waiting saves a frame when data is flowing both ways, and a remote station that polls or times out sooner than this sees its data unacknowledged for that long. An acknowledgement is also sent at once for a frame with the poll bit set, for a gap in the sequence, and once four frames are waiting.
+    /// </summary>
+    public TimeSpan AcknowledgeDelay { get; init; } = TimeSpan.FromMilliseconds(200);
 
     /// <summary>
     /// Gets how many times unacknowledged information frames are sent again, without any acknowledgement arriving, before the remote peer is considered gone and the peer becomes <see cref="MicroGatePeerState.Disconnected"/>, or <see langword="null"/> to keep sending indefinitely. Defaults to 21. It counts timer driven resends, so it has no effect when <see cref="RetransmitInterval"/> is <see langword="null"/>. Local only.

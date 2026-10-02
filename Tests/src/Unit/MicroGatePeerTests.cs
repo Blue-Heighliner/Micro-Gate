@@ -663,7 +663,7 @@ public sealed class MicroGatePeerTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(1), captured!.RetryInterval);
         Assert.Equal(TimeSpan.FromSeconds(1), captured.RetransmitInterval);
         Assert.Equal(21, captured.MaxRetransmissions);
-        Assert.True(captured.DisablePollFinalBit);
+        Assert.False(captured.DisablePollFinalBit);
         Assert.Equal(7, captured.TransmitWindow);
         Assert.Equal(1500, captured.MaxInfoField);
         Assert.Equal(MicroGateEncoding.Nrz, captured.Link.Encoding);
@@ -1042,7 +1042,7 @@ public sealed class MicroGatePeerTests : IDisposable
     [Fact]
     public async Task Retransmit_WhenNothingIsAcknowledged_SendsUnacknowledgedFramesAgainUntilAcknowledged()
     {
-        MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60) };
+        MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60), DisablePollFinalBit = true };
         MicroGatePeer peer = harness.CreatePeer();
         Task starting = peer.StartAndConnect("port", harness.Address, harness.RemoteAddress, timed).AsTask();
         await harness.NextWritten(0);
@@ -1061,6 +1061,56 @@ public sealed class MicroGatePeerTests : IDisposable
         Assert.Equal(0, repeat.SendSequence);
         Assert.Equal(new byte[] { 5 }, repeat.Payload.ToArray());
         Assert.Equal(afterAck, harness.Written.Count);
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Retransmit_WhenNothingIsAcknowledged_PollsTheRemotePeerAndSendsFramesAgainOnlyIfItsAnswerShowsTheyWereLost()
+    {
+        MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60) };
+        MicroGatePeer peer = harness.CreatePeer();
+        Task starting = peer.StartAndConnect("port", harness.Address, harness.RemoteAddress, timed).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await starting.WaitAsync(timeout);
+
+        await peer.Send(new byte[] { 5 });
+        HdlcFrame original = await harness.NextWritten(1);
+        HdlcFrame poll = await harness.NextWritten(2);
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, true, receiveSequence: 0));
+        HdlcFrame repeat = await harness.NextWritten(3);
+        harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, true, receiveSequence: 1));
+        await Task.Delay(100);
+        int afterAck = harness.Written.Count;
+        await Task.Delay(250);
+
+        Assert.Equal(HdlcFrameKind.Information, original.Kind);
+        Assert.Equal(HdlcFrameKind.ReceiveReady, poll.Kind);
+        Assert.Equal(harness.RemoteAddress, poll.Address);
+        Assert.True(poll.PollFinal);
+        Assert.Equal(HdlcFrameKind.Information, repeat.Kind);
+        Assert.Equal(new byte[] { 5 }, repeat.Payload.ToArray());
+        Assert.Equal(afterAck, harness.Written.Count);
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Retransmit_WhenNothingIsAcknowledged_PollsAgainUntilTheRemotePeerAnswers()
+    {
+        MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60) };
+        MicroGatePeer peer = harness.CreatePeer();
+        Task starting = peer.StartAndConnect("port", harness.Address, harness.RemoteAddress, timed).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        await starting.WaitAsync(timeout);
+
+        await peer.Send(new byte[] { 5 });
+        HdlcFrame firstPoll = await harness.NextWritten(2);
+        HdlcFrame secondPoll = await harness.NextWritten(3);
+
+        Assert.True(firstPoll.PollFinal);
+        Assert.True(secondPoll.PollFinal);
+        Assert.Equal(HdlcFrameKind.ReceiveReady, secondPoll.Kind);
         await peer.DisposeAsync();
     }
 

@@ -108,6 +108,11 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await first.Send(owner.Object);
 
         Assert.Equal(new byte[] { 7, 8, 9 }, await atSecond.Next());
+        for (int attempt = 0; attempt < 100 && !owner.Invocations.Any(invocation => invocation.Method.Name == nameof(IDisposable.Dispose)); attempt++)
+        {
+            await Task.Delay(50);
+        }
+
         owner.Verify(x => x.Dispose(), Times.Once);
     }
 

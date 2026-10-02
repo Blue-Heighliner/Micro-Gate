@@ -64,6 +64,23 @@ internal interface IHdlcStateMachine : IDisposable
     IReadOnlyList<ReadOnlyMemory<byte>> CreateRetransmission();
 
     /// <summary>
+    /// Gets a value indicating whether information frames have been received that no frame sent since has acknowledged yet. The caller is expected to call <see cref="CreateAcknowledgement"/> after <see cref="MicroGatePeerOptions.AcknowledgeDelay"/> if no information frame has carried the acknowledgement by then.
+    /// </summary>
+    bool AcknowledgementPending { get; }
+
+    /// <summary>
+    /// Creates an RR response acknowledging the information frames received, for when no information frame was sent in time to carry the acknowledgement.
+    /// </summary>
+    /// <returns>The raw frame bytes to transmit, empty if nothing is waiting to be acknowledged.</returns>
+    ReadOnlyMemory<byte> CreateAcknowledgement();
+
+    /// <summary>
+    /// Creates what to send when the remote station has not acknowledged outstanding information frames in time: a single RR command with the poll bit set, which the remote station must answer with a final response carrying its N(R), so the sender learns what to resend, as the ADCCP and HDLC timeout procedure prescribes. When the poll/final bit is disabled it cannot poll, and falls back to <see cref="CreateRetransmission"/>.
+    /// </summary>
+    /// <returns>The raw frames to transmit.</returns>
+    IReadOnlyList<ReadOnlyMemory<byte>> CreateTimeoutRecovery();
+
+    /// <summary>
     /// Forgets the information frame most recently created, and takes its sequence number back, because it could not be transmitted. Does nothing if no frame is outstanding.
     /// </summary>
     void DiscardLastInformation();
@@ -87,6 +104,8 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 {
     private readonly int sequenceModulus = 8;
     private readonly byte pollFinalMask = 0x10;
+    private readonly byte broadcastAddress = 0xFF;
+    private readonly int acknowledgeThreshold = 4;
     private readonly byte unnumberedMask = 0x03;
     private readonly byte testControl = 0xE3;
     private readonly byte[] unsupportedModeCommands = [0x83, 0xCF, 0x6F, 0x4F];
@@ -96,6 +115,9 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     private int sendSequence;
     private int receiveSequence;
     private bool rejectSent;
+    private bool pollOutstanding;
+    private bool acknowledgementPending;
+    private int unacknowledgedReceived;
     private bool peerBusy;
     private bool disposed;
 
@@ -111,6 +133,9 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     /// <inheritdoc />
     public bool PeerBusy => peerBusy;
 
+    /// <inheritdoc />
+    public bool AcknowledgementPending => acknowledgementPending;
+
     private byte LocalAddress => address;
 
     private byte RemoteAddress => remoteAddress;
@@ -121,14 +146,14 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         Restart();
         pendingConnectRequests++;
         State = HdlcConnectionState.Connecting;
-        return CreateUnnumberedFrame(HdlcFrameKind.SetAsynchronousBalancedMode, RemoteAddress, poll: true);
+        return CreateUnnumberedFrame(HdlcFrameKind.SetAsynchronousBalancedMode, broadcastAddress, poll: false);
     }
 
     /// <inheritdoc />
     public ReadOnlyMemory<byte> CreateDisconnect()
     {
         State = HdlcConnectionState.Disconnecting;
-        return CreateUnnumberedFrame(HdlcFrameKind.Disconnect, RemoteAddress, poll: true);
+        return CreateUnnumberedFrame(HdlcFrameKind.Disconnect, RemoteAddress, poll: false);
     }
 
     /// <inheritdoc />
@@ -148,6 +173,23 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     /// <inheritdoc />
     public IReadOnlyList<ReadOnlyMemory<byte>> CreateRetransmission() =>
         [.. outstanding.Select(frame => (ReadOnlyMemory<byte>)CreateInformationFrame(frame.Sequence, frame.Payload.Memory[..frame.Length]))];
+
+    /// <inheritdoc />
+    public ReadOnlyMemory<byte> CreateAcknowledgement() =>
+        acknowledgementPending && State == HdlcConnectionState.Connected ? CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, final: false) : ReadOnlyMemory<byte>.Empty;
+
+    /// <inheritdoc />
+    public IReadOnlyList<ReadOnlyMemory<byte>> CreateTimeoutRecovery()
+    {
+        if (options.DisablePollFinalBit)
+        {
+            return CreateRetransmission();
+        }
+
+        pollOutstanding = true;
+        ClearPendingAcknowledgement();
+        return [new HdlcFrame { Address = RemoteAddress, Kind = HdlcFrameKind.ReceiveReady, PollFinal = true, ReceiveSequence = receiveSequence }.ToArray()];
+    }
 
     /// <inheritdoc />
     public void DiscardLastInformation()
@@ -188,12 +230,13 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             return ReceiveUnrecognized(data);
         }
 
-        if (frame.Address != LocalAddress && frame.Address != RemoteAddress)
+        bool broadcast = frame.Address == broadcastAddress;
+        if (frame.Address != LocalAddress && frame.Address != RemoteAddress && !broadcast)
         {
             return new HdlcReceiveResult { State = State };
         }
 
-        bool command = frame.Address == LocalAddress;
+        bool command = frame.Address == LocalAddress || broadcast;
         bool response = frame.Address == RemoteAddress;
 
         return frame.Kind switch
@@ -322,11 +365,17 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         peerBusy = frame.Kind == HdlcFrameKind.ReceiveNotReady;
         int acknowledged = Acknowledge(frame.ReceiveSequence);
         bool poll = command && frame.PollFinal;
+        bool answersPoll = !command && frame.PollFinal && pollOutstanding;
+        if (answersPoll)
+        {
+            pollOutstanding = false;
+        }
+
         return new HdlcReceiveResult
         {
             State = State,
             Acknowledged = acknowledged,
-            Retransmit = retransmit && outstanding.Count > 0,
+            Retransmit = (retransmit || (answersPoll && !peerBusy)) && outstanding.Count > 0,
             Response = poll ? (ReadOnlyMemory<byte>?)CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, final: true) : null,
         };
     }
@@ -360,12 +409,15 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 
         rejectSent = false;
         receiveSequence = (receiveSequence + 1) % sequenceModulus;
+        unacknowledgedReceived++;
+        bool immediate = frame.PollFinal || options.AcknowledgeDelay == TimeSpan.Zero || unacknowledgedReceived >= acknowledgeThreshold;
+        acknowledgementPending = true;
         return new HdlcReceiveResult
         {
             State = State,
             Acknowledged = acknowledged,
             Payload = frame.Payload,
-            Response = CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, frame.PollFinal),
+            Response = immediate ? (ReadOnlyMemory<byte>?)CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, frame.PollFinal) : null,
         };
     }
 
@@ -431,6 +483,9 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         sendSequence = 0;
         receiveSequence = 0;
         rejectSent = false;
+        pollOutstanding = false;
+        acknowledgementPending = false;
+        unacknowledgedReceived = 0;
         peerBusy = false;
     }
 
@@ -452,8 +507,16 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         }
     }
 
-    private byte[] CreateInformationFrame(int sequence, ReadOnlyMemory<byte> payload) =>
-        new HdlcFrame
+    private void ClearPendingAcknowledgement()
+    {
+        acknowledgementPending = false;
+        unacknowledgedReceived = 0;
+    }
+
+    private byte[] CreateInformationFrame(int sequence, ReadOnlyMemory<byte> payload)
+    {
+        ClearPendingAcknowledgement();
+        return new HdlcFrame
         {
             Address = RemoteAddress,
             Kind = HdlcFrameKind.Information,
@@ -462,6 +525,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             ReceiveSequence = receiveSequence,
             Payload = payload,
         }.ToArray();
+    }
 
     private byte[] CreateUnnumberedFrame(HdlcFrameKind kind, byte address, bool poll) =>
         new HdlcFrame
@@ -471,14 +535,17 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             PollFinal = poll && !options.DisablePollFinalBit,
         }.ToArray();
 
-    private byte[] CreateSupervisoryFrame(HdlcFrameKind kind, bool final) =>
-        new HdlcFrame
+    private byte[] CreateSupervisoryFrame(HdlcFrameKind kind, bool final)
+    {
+        ClearPendingAcknowledgement();
+        return new HdlcFrame
         {
             Address = LocalAddress,
             Kind = kind,
             PollFinal = final && !options.DisablePollFinalBit,
             ReceiveSequence = receiveSequence,
         }.ToArray();
+    }
 
     private byte[] CreateFrameReject(byte rejectedControl, bool final) =>
         new HdlcFrame

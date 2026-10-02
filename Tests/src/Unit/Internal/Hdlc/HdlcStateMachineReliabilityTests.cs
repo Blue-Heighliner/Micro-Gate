@@ -2,7 +2,7 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class HdlcStateMachineReliabilityTests
 {
-    private readonly MicroGatePeerOptions options = new();
+    private readonly MicroGatePeerOptions options = new() { AcknowledgeDelay = TimeSpan.Zero };
 
     private (HdlcStateMachine Local, HdlcStateMachine Remote) EstablishConnectedPair()
     {
