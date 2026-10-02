@@ -8,34 +8,45 @@ public sealed class MicroGatePeerAcknowledgementTests : IDisposable
     public void Dispose() => harness.Dispose();
 
     [Fact]
-    public async Task Received_WithNothingToSend_IsAcknowledgedBySeparateRrAfterTheDelay()
+    public async Task Received_WithNothingToSend_IsAcknowledgedBySeparateRrNoSoonerThanTheDelay()
     {
-        await using MicroGatePeer peer = await harness.Connect();
+        using DeviceHarness timed = new(new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.FromMilliseconds(300), EnableMonitor = true });
+        await using MicroGatePeer peer = await timed.Connect();
+        TestObserver<MicroGateFrame> received = new();
+        TestObserver<MicroGateFrame> sent = new();
+        peer.Monitored.Subscribe(received);
+        peer.Transmitted.Subscribe(sent);
 
-        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
-        await Task.Delay(50);
-        int beforeDelay = harness.Written.Count;
-        HdlcFrame acknowledgement = await harness.NextWritten(1);
+        timed.Receive(timed.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
+        MicroGateFrame inbound = await received.Next();
+        MicroGateFrame acknowledgement = await sent.Next();
 
-        Assert.Equal(1, beforeDelay);
-        Assert.Equal(HdlcFrameKind.ReceiveReady, acknowledgement.Kind);
+        Assert.Equal(MicroGateFrameKind.ReceiveReady, acknowledgement.Kind);
         Assert.Equal(1, acknowledgement.ReceiveSequence);
+        Assert.True(acknowledgement.Timestamp - inbound.Timestamp >= TimeSpan.FromMilliseconds(250), $"The acknowledgement followed after {acknowledgement.Timestamp - inbound.Timestamp}.");
     }
 
     [Fact]
     public async Task Received_WhenAnInformationFrameIsSentWithinTheDelay_IsAcknowledgedByThatFrameAndNoRrFollows()
     {
-        await using MicroGatePeer peer = await harness.Connect();
+        using DeviceHarness slow = new(new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.FromSeconds(1) });
+        await using MicroGatePeer peer = await slow.Connect();
+        SemaphoreSlim delivered = new(0);
+        peer.Receiver = owner =>
+        {
+            owner.Dispose();
+            delivered.Release();
+        };
 
-        harness.Receive(harness.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
-        await Task.Delay(30);
+        slow.Receive(slow.Peer(HdlcFrameKind.Information, false, 0, new byte[] { 1 }));
+        await delivered.WaitAsync(timeout);
         await peer.Send(new byte[] { 2 });
-        HdlcFrame sent = await harness.NextWritten(1);
-        await Task.Delay(400);
+        HdlcFrame sent = await slow.NextWritten(1);
+        await Task.Delay(1500);
 
         Assert.Equal(HdlcFrameKind.Information, sent.Kind);
         Assert.Equal(1, sent.ReceiveSequence);
-        Assert.Equal(2, harness.Written.Count);
+        Assert.Equal(2, slow.Written.Count);
     }
 
     [Fact]

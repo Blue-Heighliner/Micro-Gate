@@ -1067,7 +1067,7 @@ public sealed class MicroGatePeerTests : IDisposable
     [Fact]
     public async Task Retransmit_WhenNothingIsAcknowledged_PollsTheRemotePeerAndSendsFramesAgainOnlyIfItsAnswerShowsTheyWereLost()
     {
-        MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(60) };
+        MicroGatePeerOptions timed = harness.Options with { RetransmitInterval = TimeSpan.FromMilliseconds(400) };
         MicroGatePeer peer = harness.CreatePeer();
         Task starting = peer.StartAndConnect("port", harness.Address, harness.RemoteAddress, timed).AsTask();
         await harness.NextWritten(0);
@@ -1080,9 +1080,9 @@ public sealed class MicroGatePeerTests : IDisposable
         harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, true, receiveSequence: 0));
         HdlcFrame repeat = await harness.NextWritten(3);
         harness.Receive(harness.Peer(HdlcFrameKind.ReceiveReady, true, receiveSequence: 1));
-        await Task.Delay(100);
+        await Task.Delay(150);
         int afterAck = harness.Written.Count;
-        await Task.Delay(250);
+        await Task.Delay(900);
 
         Assert.Equal(HdlcFrameKind.Information, original.Kind);
         Assert.Equal(HdlcFrameKind.ReceiveReady, poll.Kind);
