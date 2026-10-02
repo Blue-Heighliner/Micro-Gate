@@ -2,6 +2,9 @@
   <Folder Name="/Core/">
     <Project Path="Core/Core.csproj" />
   </Folder>
+  <Folder Name="/Controller/">
+    <Project Path="Controller/Controller.csproj" />
+  </Folder>
   <Folder Name="/Monitor/">
     <Project Path="Monitor/Monitor.csproj" />
   </Folder>

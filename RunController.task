@@ -1,0 +1,2 @@
+script Run Controller
+    run dotnet run --project Controller/Controller.csproj

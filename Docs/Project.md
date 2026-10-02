@@ -11,6 +11,8 @@ actions.
 - `Scripts/Verify.cs` - applies formatting fixes and regenerates the coverage badge.
 - `Scripts/Publish.cs` - cuts a release (see Publishing below). A manual, human-only action.
 - `Scripts/RunMonitor.cs` - runs the Monitor app from source (`dotnet run --project Monitor/Monitor.csproj`).
+- `Scripts/RunController.cs` - runs the Controller app from source (`dotnet run --project Controller/Controller.csproj`).
+- `Scripts/RunControllers.cs` - builds Controller once and runs two instances from source side by side, for two peers on two cabled devices (`RunControllers.task`).
 
 ## Publishing
 
@@ -53,6 +55,10 @@ Linux-only tests return early on other operating systems, and the pseudo-termina
 `Sample/` is an Avalonia demo application, not part of the published package. Run it with
 `dotnet run --project Sample` (also available as the `RunSample.task` AutoDev task). It is built, formatted, and
 lock-file-restored with the rest of the solution.
+
+## Controller
+
+`Controller/` is an Avalonia desktop application, not part of the published package, that connects as an `IMicroGatePeer`: the user picks a port, the two hex addresses, and the link encoding and CRC, then connects. Received and sent payloads appear in one log as rows of just a timestamp, direction, and byte count (received payloads are copied out of the pooled owner and disposed on the peer's delivery task, then posted to the UI thread). Selecting a row expands it into a table of its bytes, 30 cells wide with column numbers above and row numbers to the left, and collapses the previously expanded row. Cells show their ASCII character (control characters as abbreviations such as `LF`, values above 127 as numbers) and can be multi-selected (click, Ctrl, Shift, drag) and switched via the context menu between ASCII and the 0-255 value. The send box is the same table, editable: in ASCII input a typed character fills the selected cell and selects the next, in raw input a typed 0-255 value fills the cell and Tab (or a complete value) moves on; Enter sends. Its context menu inserts or replaces the selection with a control character (NUL, SOH, STX, ETX, LF, and so on) and deletes cells, which shortens the frame; the grid holds at most the peer's maximum payload. It looks like Monitor (same palette and layout) and is run (`RunController.task`), formatted, lock-file-restored, and published exactly like Monitor, with `SerialController` as the executable name.
 
 ## Monitor
 

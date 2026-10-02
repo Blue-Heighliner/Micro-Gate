@@ -7,16 +7,16 @@ nuspec (license expression MIT, System.Reactive 7.0.0) and the text taken from t
 project's repository (https://github.com/dotnet/reactive), which the nuspec names.
 The package has no further dependencies for net10.0.
 
-The Tests project (xUnit, Moq, coverlet) and the Sample and Monitor projects (Avalonia,
+The Tests project (xUnit, Moq, coverlet) and the Sample, Controller, and Monitor projects (Avalonia,
 Microsoft.Extensions.DependencyInjection) are not redistributed as part of the published
 NuGet package; this file's scope is that package only.
 
-Monitor is additionally published as a self-contained single-file executable (see
+Monitor and Controller are additionally published as a self-contained single-file executable (see
 Docs/Project.md), which does bundle Avalonia, Microsoft.Extensions.DependencyInjection,
 and their own transitive dependencies into the distributed binary. That distribution's
 own third-party notices are not covered by this file and have not yet been compiled;
 compile them (their licenses, MIT among others, and content) before distributing a
-Monitor build to anyone outside this repository.
+Monitor or Controller build to anyone outside this repository.
 
 Keep this file in sync whenever Core's package references change.
 

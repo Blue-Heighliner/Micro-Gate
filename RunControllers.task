@@ -1,0 +1,2 @@
+script Run Controllers
+    run dotnet run Scripts/RunControllers.cs

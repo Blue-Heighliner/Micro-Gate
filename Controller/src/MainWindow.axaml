@@ -1,0 +1,98 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="using:BlueHeighliner.MicroGate"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
+        x:Class="BlueHeighliner.MicroGate.MainWindow"
+        Title="MicroGate Controller"
+        Width="1280" Height="800"
+        Background="{StaticResource EditorBackgroundBrush}">
+    <Grid RowDefinitions="*,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="280,Auto,*">
+            <Border Grid.Column="0"
+                    Background="{StaticResource SidebarBackgroundBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16" Spacing="6">
+                        <TextBlock Text="PORT" Classes="section-header" />
+                        <ComboBox x:Name="PortComboBox" HorizontalAlignment="Stretch" Margin="0,4,0,0" />
+                        <Button x:Name="RefreshButton" Content="Refresh Ports" HorizontalAlignment="Stretch" Click="RefreshPorts_Click" Margin="0,6,0,0" />
+                        <Button x:Name="ConnectButton" Content="Connect" Classes="accent" HorizontalAlignment="Stretch" Click="Connect_Click" Margin="0,6,0,0" />
+
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
+
+                        <TextBlock Text="SETTINGS" Classes="section-header" />
+                        <TextBlock Text="Local address (hex)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="AddressTextBox" Text="01" />
+                        <TextBlock Text="Remote address (hex)" Classes="field-label" Margin="0,10,0,4" />
+                        <TextBox x:Name="RemoteAddressTextBox" Text="03" />
+                        <TextBlock Text="Encoding" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="EncodingComboBox" HorizontalAlignment="Stretch" />
+                        <TextBlock Text="CRC" Classes="field-label" Margin="0,10,0,4" />
+                        <ComboBox x:Name="CrcComboBox" HorizontalAlignment="Stretch" />
+
+                        <Border Height="1" Background="{StaticResource BorderBrush}" Margin="0,16,0,16" />
+
+                        <TextBlock Text="LOG" Classes="section-header" />
+                        <Button x:Name="ClearButton" Content="Clear Log" HorizontalAlignment="Stretch" Click="ClearLog_Click" Margin="0,4,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+            <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto">
+                <ListBox x:Name="LogListBox"
+                         Grid.Row="0"
+                         Background="{StaticResource EditorBackgroundBrush}"
+                         BorderThickness="0"
+                         FontFamily="Cascadia Code,Consolas,Menlo,monospace"
+                         FontSize="12"
+                         Padding="8"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         SelectionChanged="LogListBox_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:LogEntry">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Text}" />
+                                <local:ByteGrid Cells="{Binding Cells}"
+                                                IsVisible="{Binding IsExpanded}"
+                                                HorizontalAlignment="Left"
+                                                Margin="0,8,0,8" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <Border Grid.Row="1" Height="1" Background="{StaticResource BorderBrush}" />
+
+                <Border Grid.Row="2" Background="{StaticResource SidebarBackgroundBrush}" Padding="16">
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
+                            <TextBlock Grid.Column="0" Text="SEND" Classes="section-header" VerticalAlignment="Center" />
+                            <TextBlock x:Name="SendCountText" Grid.Column="1" Text="0 bytes" Classes="field-label" VerticalAlignment="Center" Margin="12,0,0,0" />
+                            <TextBlock Grid.Column="3" Text="Input" Classes="field-label" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="InputModeComboBox" Grid.Column="4" Width="110" SelectionChanged="InputMode_SelectionChanged" />
+                            <Button x:Name="ClearSendButton" Grid.Column="5" Content="Clear" Margin="8,0,0,0" Click="ClearSend_Click" />
+                            <Button x:Name="SendButton" Grid.Column="6" Content="Send" Classes="accent" Margin="8,0,0,0" IsEnabled="False" Click="Send_Click" />
+                        </Grid>
+                        <ScrollViewer MaxHeight="190" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <local:ByteGrid x:Name="SendGrid" IsEditable="True" HorizontalAlignment="Left" />
+                        </ScrollViewer>
+                        <TextBlock x:Name="SendHintText" Classes="field-label" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="1" Background="{StaticResource StatusBarBackgroundBrush}" Padding="12,4">
+            <StackPanel Orientation="Horizontal" Spacing="20">
+                <TextBlock x:Name="StatusText" Text="Idle" Foreground="White" FontSize="12" VerticalAlignment="Center" />
+                <TextBlock x:Name="CountText" Text="0 received, 0 sent" Foreground="White" FontSize="12" VerticalAlignment="Center" Opacity="0.85" />
+                <TextBlock x:Name="PortStatusText" Text="No active port" Foreground="White" FontSize="12" VerticalAlignment="Center" Opacity="0.85" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

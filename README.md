@@ -51,6 +51,10 @@ await peer.Send("Hello"u8.ToArray());
 
 `Sample/` is an Avalonia desktop application demonstrating the library: enumerate ports, connect, and send and receive messages. Run it with `dotnet run --project Sample`.
 
+## Controller
+
+`Controller/` is an Avalonia desktop application that opens a MicroGate port as a peer: connect, browse received data as expandable byte tables (ASCII or 0-255 values per cell), and compose data to send in the same kind of table, typing ASCII characters or raw byte values and inserting control characters. Run it with `dotnet run --project Controller`, or publish it as a single self-contained `SerialController` executable the same way as Monitor (see [`Docs/Project.md`](Docs/Project.md)).
+
 ## Monitor
 
 `Monitor/` is an Avalonia desktop application that passively observes a MicroGate device: pick a port and watch every frame on it, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their data. It never writes to the device. The recorded log can be saved to a file and reloaded later. Run it with `dotnet run --project Monitor`, or publish it as a single self-contained executable (see [`Docs/Project.md`](Docs/Project.md)).
