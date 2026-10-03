@@ -6,7 +6,7 @@ namespace BlueHeighliner.MicroGate;
 internal interface IStartupParser
 {
     /// <summary>
-    /// Parses command-line arguments. <c>--mode Peer|Monitor|Passthrough</c> sets the initial mode (case-insensitive), and <c>--local 0-255</c> and <c>--remote 0-255</c> set the addresses, each also as <c>--name=value</c>. Unrelated arguments are left to the UI framework.
+    /// Parses command-line arguments. <c>--mode HdlcPeer|HdlcMonitor|HdlcPassthrough|UartPeer|UartMonitor|UartPassthrough</c> sets the initial mode (case-insensitive; spaces, hyphens and underscores are ignored, so <c>hdlc-peer</c> works too), and <c>--local 0-255</c> and <c>--remote 0-255</c> set the addresses, each also as <c>--name=value</c>. Unrelated arguments are left to the UI framework.
     /// </summary>
     /// <param name="args">The command-line arguments.</param>
     /// <returns>The options asked for, with a problem description if a value was missing or invalid; an option with a bad value keeps its default.</returns>
@@ -23,7 +23,7 @@ internal sealed class StartupParser : IStartupParser
     /// <inheritdoc />
     public StartupOptions Parse(IReadOnlyList<string> args)
     {
-        ControllerMode mode = ControllerMode.Peer;
+        ControllerMode mode = ControllerMode.HdlcPeer;
         byte? local = null;
         byte? remote = null;
         List<string> problems = [];
@@ -33,13 +33,13 @@ internal sealed class StartupParser : IStartupParser
             if (Matches(args[index], modeOption, out string? inline))
             {
                 string value = inline ?? (index + 1 < args.Count ? args[++index] : string.Empty);
-                if (Enum.TryParse(value, ignoreCase: true, out ControllerMode parsed) && Enum.IsDefined(parsed))
+                if (TryParseMode(value, out ControllerMode parsed))
                 {
                     mode = parsed;
                 }
                 else
                 {
-                    problems.Add($"Unknown mode '{value}'; use Peer, Monitor, or Passthrough.");
+                    problems.Add($"Unknown mode '{value}'; use HdlcPeer, HdlcMonitor, HdlcPassthrough, UartPeer, UartMonitor, or UartPassthrough.");
                 }
             }
             else if (Matches(args[index], localOption, out inline))
@@ -53,6 +53,13 @@ internal sealed class StartupParser : IStartupParser
         }
 
         return new StartupOptions { InitialMode = mode, LocalAddress = local, RemoteAddress = remote, Problem = problems.Count == 0 ? null : string.Join(" ", problems) };
+    }
+
+    private bool TryParseMode(string value, out ControllerMode mode)
+    {
+        string name = new([.. value.Where(character => character is not (' ' or '-' or '_'))]);
+        mode = default;
+        return name.Length > 0 && char.IsLetter(name[0]) && Enum.TryParse(name, ignoreCase: true, out mode) && Enum.IsDefined(mode);
     }
 
     private bool Matches(string argument, string option, out string? inline)

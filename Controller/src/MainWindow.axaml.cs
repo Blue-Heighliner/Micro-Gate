@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// The main window of the MicroGate controller, which runs in one of three <see cref="ControllerMode"/>s: as a peer that connects and sends data, as a monitor that only observes frames, or as a passthrough between two ports. Frames and data are shown, and in peer mode edited, as tables of bytes (see <see cref="ByteGrid"/>).
+/// The main window of the MicroGate controller, which runs in one of six <see cref="ControllerMode"/>s: over HDLC or over a plain asynchronous (UART) line, as a peer that sends and receives data, as a monitor that only observes, or as a passthrough between two ports. Frames and data are shown, and in the peer modes edited, as tables of bytes (see <see cref="ByteGrid"/>).
 /// </summary>
 internal sealed partial class MainWindow : Window
 {
@@ -9,14 +9,16 @@ internal sealed partial class MainWindow : Window
     /// Initializes a new instance of the <see cref="MainWindow"/> class.
     /// </summary>
     /// <param name="portSource">The port source used to enumerate available MicroGate devices.</param>
-    /// <param name="peerFactory">The factory that creates a new, idle peer. A peer is single use, so one is created for every connection.</param>
+    /// <param name="peerFactory">The factory that creates a new, idle HDLC peer. A peer is single use, so one is created for every connection.</param>
+    /// <param name="uartPeerFactory">The factory that creates a new, idle UART peer, used the same way.</param>
     /// <param name="describer">The describer of the frames shown in monitor and passthrough mode.</param>
     /// <param name="serializer">The serializer that saves and loads the log.</param>
     /// <param name="startup">What the command line asked for, such as the mode to open in.</param>
-    public MainWindow(IMicroGatePortSource portSource, IHdlcPeerFactory peerFactory, IFrameDescriber describer, ILogSerializer serializer, StartupOptions startup)
+    public MainWindow(IMicroGatePortSource portSource, IHdlcPeerFactory peerFactory, IUartPeerFactory uartPeerFactory, IFrameDescriber describer, ILogSerializer serializer, StartupOptions startup)
     {
         this.portSource = portSource;
         this.peerFactory = peerFactory;
+        this.uartPeerFactory = uartPeerFactory;
         this.describer = describer;
         this.serializer = serializer;
         InitializeComponent();
@@ -25,12 +27,18 @@ internal sealed partial class MainWindow : Window
         AddressTextBox.Text = startup.LocalAddress?.ToString(CultureInfo.InvariantCulture) ?? AddressTextBox.Text;
         RemoteAddressTextBox.Text = startup.RemoteAddress?.ToString(CultureInfo.InvariantCulture) ?? RemoteAddressTextBox.Text;
         ModeComboBox.Fill(mode);
-        LinkOptions.MaxInfoFieldChanged += (_, size) => SendGrid.MaxCells = size;
+        ModeComboBox.ItemTemplate = new FuncDataTemplate<ControllerMode>((item, _) => new TextBlock { Text = item.Title });
+        LinkOptions.MaxInfoFieldChanged += (_, size) =>
+        {
+            maxInfoField = size;
+            SendGrid.MaxCells = mode.IsUart ? uartMaxCells : size;
+        };
         ColumnsTextBox.Text = columns.ToString(CultureInfo.InvariantCulture);
         InputModeComboBox.ItemsSource = new[] { "ASCII", "Raw values" };
         InputModeComboBox.SelectedIndex = 0;
         SendGrid.Cells = [];
-        SendGrid.MaxCells = new HdlcPeerOptions().MaxInfoField;
+        maxInfoField = new HdlcPeerOptions().MaxInfoField;
+        SendGrid.MaxCells = maxInfoField;
         SendGrid.Edited += (_, _) => UpdateSendCount();
         SendGrid.SubmitRequested += async (_, _) => await Send();
         LogViewComboBox.Fill(LogView.Frames);
@@ -51,20 +59,29 @@ internal sealed partial class MainWindow : Window
             {
                 open.Dispose();
             }
+
+            foreach (IUartPeer open in uartPeers)
+            {
+                open.Dispose();
+            }
         };
     }
 
     private readonly IMicroGatePortSource portSource;
     private readonly IHdlcPeerFactory peerFactory;
+    private readonly IUartPeerFactory uartPeerFactory;
     private readonly IFrameDescriber describer;
     private readonly ILogSerializer serializer;
     private readonly List<IHdlcPeer> peers = [];
+    private readonly List<IUartPeer> uartPeers = [];
     private readonly List<Channel<byte[]>> relays = [];
     private readonly List<LogEntry> log = [];
     private readonly ObservableCollection<LogEntry> shown = [];
     private readonly List<IDisposable> subscriptions = [];
     private readonly int maxLogEntries = 5000;
-    private ControllerMode mode = ControllerMode.Peer;
+    private readonly int uartMaxCells = 65536;
+    private ControllerMode mode = ControllerMode.HdlcPeer;
+    private int maxInfoField;
     private CancellationTokenSource? connectCancellation;
     private int columns = 30;
     private LogView view = LogView.Frames;
@@ -107,7 +124,7 @@ internal sealed partial class MainWindow : Window
 
     private async void Connect_Click(object? sender, RoutedEventArgs e)
     {
-        if (peers.Count > 0)
+        if (HasOpenPorts)
         {
             await Release();
             AppendMessage("Disconnected.");
@@ -121,7 +138,9 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        if (BuildOptions() is not { } options)
+        HdlcPeerOptions? options = null;
+        UartPeerOptions? uartOptions = null;
+        if (mode.IsUart ? (uartOptions = BuildUartOptions()) is null : (options = BuildOptions()) is null)
         {
             return;
         }
@@ -136,14 +155,21 @@ internal sealed partial class MainWindow : Window
 
         switch (mode)
         {
-            case ControllerMode.Peer:
-                await ConnectPeer(portName, options);
+            case ControllerMode.HdlcPeer:
+                await ConnectPeer(portName, options!);
                 break;
-            case ControllerMode.Monitor:
-                await ConnectMonitor(portName, options);
+            case ControllerMode.HdlcMonitor:
+                await ConnectMonitor(portName, options!);
+                break;
+            case ControllerMode.HdlcPassthrough:
+                await ConnectPassthrough(portName, options!);
+                break;
+            case ControllerMode.UartPeer:
+            case ControllerMode.UartMonitor:
+                await ConnectUart(portName, uartOptions!);
                 break;
             default:
-                await ConnectPassthrough(portName, options);
+                await ConnectUartPassthrough(portName, uartOptions!);
                 break;
         }
 
@@ -227,6 +253,67 @@ internal sealed partial class MainWindow : Window
         }
     }
 
+    private async Task ConnectUart(string portName, UartPeerOptions options)
+    {
+        IUartPeer newPeer = OpenUart(portName, string.Empty);
+        newPeer.Receiver = owner => OnUartReceived(owner, "Receive", true, null);
+        AppendMessage($"Opening {portName} at {Describe(options)}...");
+
+        if (await StartAllUart([(newPeer, portName)], options))
+        {
+            AppendMessage(mode == ControllerMode.UartMonitor ? "Monitoring." : "Open.");
+        }
+    }
+
+    private async Task ConnectUartPassthrough(string portName, UartPeerOptions options)
+    {
+        if (PortBComboBox.SelectedItem is not string portNameB || portNameB == portName)
+        {
+            AppendMessage("Select two different ports.");
+            return;
+        }
+
+        IUartPeer first = OpenUart(portName, $"{portName}: ");
+        IUartPeer second = OpenUart(portNameB, $"{portNameB}: ");
+        Channel<byte[]> firstToSecond = Channel.CreateUnbounded<byte[]>();
+        Channel<byte[]> secondToFirst = Channel.CreateUnbounded<byte[]>();
+        relays.Add(firstToSecond);
+        relays.Add(secondToFirst);
+        first.Receiver = owner => OnUartReceived(owner, $"{portName} > {portNameB}", true, firstToSecond);
+        second.Receiver = owner => OnUartReceived(owner, $"{portNameB} > {portName}", false, secondToFirst);
+        _ = RelayUart(firstToSecond.Reader, second, $"{portName} > {portNameB}");
+        _ = RelayUart(secondToFirst.Reader, first, $"{portNameB} > {portName}");
+        AppendMessage($"Passing through between {portName} and {portNameB} at {Describe(options)}...");
+
+        if (await StartAllUart([(first, portName), (second, portNameB)], options))
+        {
+            AppendMessage("Passing through.");
+        }
+    }
+
+    private string Describe(UartPeerOptions options) =>
+        $"{options.BaudRate} baud, {options.DataBits}{options.Parity.ToString()[0]}{(options.StopBits == UartStopBits.Two ? 2 : 1)}";
+
+    private async Task<bool> StartAllUart(IReadOnlyList<(IUartPeer Peer, string PortName)> targets, UartPeerOptions options)
+    {
+        UpdateState();
+        try
+        {
+            await Task.WhenAll(targets.Select(target => target.Peer.Start(target.PortName, options, connectCancellation!.Token).AsTask()));
+            return true;
+        }
+        catch (Exception ex) when (ex is not (OperationCanceledException or ObjectDisposedException))
+        {
+            AppendMessage($"Start failed: {ex.Message}");
+            await Release();
+            return false;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> StartAll(IReadOnlyList<(IHdlcPeer Peer, string PortName)> targets, HdlcPeerOptions options)
     {
         UpdateState();
@@ -252,16 +339,31 @@ internal sealed partial class MainWindow : Window
         IHdlcPeer opened = peerFactory.Create();
         peers.Add(opened);
         connectCancellation ??= new CancellationTokenSource();
-        PortStatusText.Text = string.Join(", ", peers.Count == 1 ? [portName] : [PortStatusText.Text, portName]);
+        NotePort(portName);
         subscriptions.Add(opened.StateChanged.Subscribe(state => OnStateChanged(opened, state)));
         subscriptions.Add(opened.Exceptions.Subscribe(ex => Dispatcher.UIThread.Post(() => AppendMessage($"{label}Error: {ex.Message}"))));
         return opened;
     }
 
+    private IUartPeer OpenUart(string portName, string label)
+    {
+        IUartPeer opened = uartPeerFactory.Create();
+        uartPeers.Add(opened);
+        connectCancellation ??= new CancellationTokenSource();
+        NotePort(portName);
+        subscriptions.Add(opened.StateChanged.Subscribe(state => OnUartStateChanged(opened, state)));
+        subscriptions.Add(opened.Exceptions.Subscribe(ex => Dispatcher.UIThread.Post(() => AppendMessage($"{label}Error: {ex.Message}"))));
+        return opened;
+    }
+
+    private void NotePort(string portName) => PortStatusText.Text = peers.Count + uartPeers.Count == 1 ? portName : $"{PortStatusText.Text}, {portName}";
+
     private async Task Release()
     {
         IHdlcPeer[] released = [.. peers];
+        IUartPeer[] releasedUart = [.. uartPeers];
         peers.Clear();
+        uartPeers.Clear();
         connectCancellation?.Cancel();
         connectCancellation = null;
         foreach (Channel<byte[]> relay in relays)
@@ -277,7 +379,7 @@ internal sealed partial class MainWindow : Window
         }
 
         subscriptions.Clear();
-        await Task.WhenAll(released.Select(released => released.DisposeAsync().AsTask()));
+        await Task.WhenAll(released.Select(peer => peer.DisposeAsync().AsTask()).Concat(releasedUart.Select(peer => peer.DisposeAsync().AsTask())));
     }
 
     private async Task Relay(ChannelReader<byte[]> reader, IHdlcPeer target, string direction)
@@ -293,6 +395,46 @@ internal sealed partial class MainWindow : Window
         {
             Dispatcher.UIThread.Post(() => AppendMessage($"Forwarding {direction} failed: {ex.Message}"));
         }
+    }
+
+    private async Task RelayUart(ChannelReader<byte[]> reader, IUartPeer target, string direction)
+    {
+        try
+        {
+            await foreach (byte[] data in reader.ReadAllAsync())
+            {
+                await target.Send(data);
+            }
+        }
+        catch (Exception ex)
+        {
+            Dispatcher.UIThread.Post(() => AppendMessage($"Forwarding {direction} failed: {ex.Message}"));
+        }
+    }
+
+    private void OnUartReceived(IMemoryOwner<byte> owner, string direction, bool isFirst, Channel<byte[]>? relay)
+    {
+        byte[] data;
+        using (owner)
+        {
+            data = owner.Memory.ToArray();
+        }
+
+        relay?.Writer.TryWrite(data);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (isFirst)
+            {
+                firstCount++;
+            }
+            else
+            {
+                secondCount++;
+            }
+
+            AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  {direction}  {data.Length}B", data));
+            UpdateCounts();
+        });
     }
 
     private void OnReceived(IMemoryOwner<byte> owner)
@@ -328,7 +470,7 @@ internal sealed partial class MainWindow : Window
             }
 
             AppendEntry(new LogEntry(text, data, fields));
-            if (mode != ControllerMode.Peer && frame.Kind == HdlcFrameKind.Information && !frame.Payload.IsEmpty)
+            if (mode != ControllerMode.HdlcPeer && frame.Kind == HdlcFrameKind.Information && !frame.Payload.IsEmpty)
             {
                 if (isFirst)
                 {
@@ -364,15 +506,27 @@ internal sealed partial class MainWindow : Window
             UpdateState();
         });
 
+    private void OnUartStateChanged(IUartPeer source, UartPeerState state) =>
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (state == UartPeerState.Closed && uartPeers.Contains(source))
+            {
+                await Release();
+                AppendMessage("Port closed.");
+            }
+
+            UpdateState();
+        });
+
     private void UpdateMode()
     {
-        bool isPeer = mode == ControllerMode.Peer;
-        bool isPassthrough = mode == ControllerMode.Passthrough;
-        PortHeaderText.Text = isPassthrough ? "Port A" : "Port";
-        PortBPanel.IsVisible = isPassthrough;
-        AddressesPanel.IsVisible = isPeer;
+        PortHeaderText.Text = mode.IsPassthrough ? "Port A" : "Port";
+        PortBPanel.IsVisible = mode.IsPassthrough;
+        AddressesPanel.IsVisible = mode == ControllerMode.HdlcPeer;
         LinkOptions.SetMode(mode);
-        SendPanel.IsVisible = isPeer;
+        SendPanel.IsVisible = mode.IsPeer;
+        ViewPanel.IsVisible = !mode.IsUart;
+        SendGrid.MaxCells = mode.IsUart ? uartMaxCells : maxInfoField;
         ApplyView();
         UpdateState();
         UpdateCounts();
@@ -380,33 +534,57 @@ internal sealed partial class MainWindow : Window
 
     private void UpdateState()
     {
-        bool active = peers.Count > 0;
-        HdlcPeerState state = active ? peers.Min(open => open.State) : HdlcPeerState.Idle;
+        bool active = HasOpenPorts;
         ModeComboBox.IsEnabled = !active;
         ConnectButton.Content = (mode, active) switch
         {
-            (ControllerMode.Peer, false) => "Connect",
-            (ControllerMode.Peer, true) => "Disconnect",
+            (ControllerMode.HdlcPeer, false) => "Connect",
+            (ControllerMode.HdlcPeer, true) => "Disconnect",
+            (ControllerMode.UartPeer, false) => "Open",
+            (ControllerMode.UartPeer, true) => "Close",
             (_, false) => "Start",
             _ => "Stop",
         };
-        SendButton.IsEnabled = mode == ControllerMode.Peer && state == HdlcPeerState.Connected;
-        StatusText.Text = state == HdlcPeerState.Ready ? (mode == ControllerMode.Monitor ? "Monitoring" : "Passing through") : state.ToString();
+
+        if (mode.IsUart)
+        {
+            UartPeerState uartState = uartPeers.Count > 0 ? uartPeers.Min(open => open.State) : UartPeerState.Idle;
+            SendButton.IsEnabled = mode == ControllerMode.UartPeer && uartState == UartPeerState.Open;
+            StatusText.Text = uartState == UartPeerState.Open ? (mode switch { ControllerMode.UartMonitor => "Monitoring", ControllerMode.UartPassthrough => "Passing through", _ => "Open" }) : uartState.ToString();
+            return;
+        }
+
+        HdlcPeerState state = peers.Count > 0 ? peers.Min(open => open.State) : HdlcPeerState.Idle;
+        SendButton.IsEnabled = mode == ControllerMode.HdlcPeer && state == HdlcPeerState.Connected;
+        StatusText.Text = state == HdlcPeerState.Ready ? (mode == ControllerMode.HdlcMonitor ? "Monitoring" : "Passing through") : state.ToString();
     }
 
     private void UpdateCounts()
     {
-        bool frames = view == LogView.Frames;
+        bool frames = view == LogView.Frames && !mode.IsUart;
         int first = frames ? firstFrames : firstCount;
         int second = frames ? secondFrames : secondCount;
         CountText.Text = (mode, frames) switch
         {
-            (ControllerMode.Peer, true) => $"{first} frames received, {second} transmitted",
-            (ControllerMode.Peer, false) => $"{first} received, {second} sent",
-            (ControllerMode.Monitor, true) => first == 1 ? "1 frame" : $"{first} frames",
-            (ControllerMode.Monitor, false) => $"{first} received",
+            (ControllerMode.UartPeer, _) => $"{first} received, {second} sent",
+            (ControllerMode.UartMonitor, _) => $"{first} received",
+            (ControllerMode.HdlcPeer, true) => $"{first} frames received, {second} transmitted",
+            (ControllerMode.HdlcPeer, false) => $"{first} received, {second} sent",
+            (ControllerMode.HdlcMonitor, true) => first == 1 ? "1 frame" : $"{first} frames",
+            (ControllerMode.HdlcMonitor, false) => $"{first} received",
             _ => $"{first} {firstName} > {secondName}, {second} {secondName} > {firstName}",
         };
+    }
+
+    private UartPeerOptions? BuildUartOptions()
+    {
+        if (LinkOptions.BuildUart(out string problem) is { } built)
+        {
+            return built;
+        }
+
+        AppendMessage(problem);
+        return null;
     }
 
     private HdlcPeerOptions? BuildOptions()
@@ -487,6 +665,12 @@ internal sealed partial class MainWindow : Window
 
     private async Task Send()
     {
+        if (mode == ControllerMode.UartPeer)
+        {
+            await SendUart();
+            return;
+        }
+
         if (peers.Count != 1 || peers[0] is not { State: HdlcPeerState.Connected } connected)
         {
             AppendMessage("Not connected.");
@@ -510,6 +694,38 @@ internal sealed partial class MainWindow : Window
         try
         {
             await connected.Send(data);
+            secondCount++;
+            AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  Transmit  {data.Length}B", data));
+            SendGrid.Cells = [];
+            UpdateSendCount();
+            UpdateCounts();
+        }
+        catch (Exception ex)
+        {
+            AppendMessage($"Send failed: {ex.Message}");
+        }
+
+        UpdateState();
+    }
+
+    private async Task SendUart()
+    {
+        if (uartPeers.Count != 1 || uartPeers[0] is not { State: UartPeerState.Open } open)
+        {
+            AppendMessage("Not open.");
+            return;
+        }
+
+        byte[] data = [.. (SendGrid.Cells ?? []).Select(cell => cell.Value)];
+        if (data.Length == 0)
+        {
+            return;
+        }
+
+        SendButton.IsEnabled = false;
+        try
+        {
+            await open.Send(data);
             secondCount++;
             AppendEntry(new LogEntry($"{DateTime.Now:HH:mm:ss.fff}  Transmit  {data.Length}B", data));
             SendGrid.Cells = [];
@@ -650,7 +866,9 @@ internal sealed partial class MainWindow : Window
         }
     }
 
-    private bool IsShown(LogEntry entry) => view == LogView.Frames ? entry.IsFrame || !entry.HasData : !entry.IsFrame;
+    private bool HasOpenPorts => peers.Count + uartPeers.Count > 0;
+
+    private bool IsShown(LogEntry entry) => mode.IsUart || (view == LogView.Frames ? entry.IsFrame || !entry.HasData : !entry.IsFrame);
 
     private void ApplyView()
     {

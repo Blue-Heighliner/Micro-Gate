@@ -2,6 +2,27 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="BlueHeighliner.MicroGate.OptionsPanel">
     <StackPanel Spacing="6">
+        <StackPanel x:Name="UartPanel" Spacing="6" IsVisible="False">
+            <TextBlock Text="LINE (MUST MATCH REMOTE)" Classes="section-header" />
+            <Grid ColumnDefinitions="96,*" ToolTip.Tip="Baud rate (bit/s)">
+                <TextBlock Text="Baud rate" Classes="field-label" />
+                <TextBox x:Name="BaudRateTextBox" Grid.Column="1" />
+            </Grid>
+            <Grid ColumnDefinitions="96,*" ToolTip.Tip="Data bits (5-8)">
+                <TextBlock Text="Data bits" Classes="field-label" />
+                <ComboBox x:Name="DataBitsComboBox" Grid.Column="1" />
+            </Grid>
+            <Grid ColumnDefinitions="96,*">
+                <TextBlock Text="Stop bits" Classes="field-label" />
+                <ComboBox x:Name="StopBitsComboBox" Grid.Column="1" />
+            </Grid>
+            <Grid ColumnDefinitions="96,*">
+                <TextBlock Text="Parity" Classes="field-label" />
+                <ComboBox x:Name="ParityComboBox" Grid.Column="1" />
+            </Grid>
+            <CheckBox x:Name="UartLoopbackCheckBox" Content="Internal loopback" FontSize="12" MinHeight="24" />
+        </StackPanel>
+        <StackPanel x:Name="HdlcPanel" Spacing="6">
         <TextBlock Text="LINK (MUST MATCH REMOTE)" Classes="section-header" />
         <Grid ColumnDefinitions="96,*">
             <TextBlock Text="Encoding" Classes="field-label" />
@@ -74,6 +95,7 @@
         </Grid>
         <CheckBox x:Name="DisablePollFinalCheckBox" Content="Disable poll/final bit" FontSize="12" MinHeight="24" />
         <CheckBox x:Name="LoopbackCheckBox" Content="Internal loopback" FontSize="12" MinHeight="24" />
+        </StackPanel>
         </StackPanel>
     </StackPanel>
 </UserControl>

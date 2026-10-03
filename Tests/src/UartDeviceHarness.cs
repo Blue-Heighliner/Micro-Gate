@@ -10,7 +10,11 @@ internal sealed class UartDeviceHarness : IDisposable
             {
                 try
                 {
-                    byte[] chunk = inbound.Take(closed.Token);
+                    if (!inbound.TryTake(out byte[]? chunk, Timeout.Infinite, closed.Token))
+                    {
+                        return 0;
+                    }
+
                     chunk.CopyTo(buffer, 0);
                     return chunk.Length;
                 }
@@ -53,7 +57,7 @@ internal sealed class UartDeviceHarness : IDisposable
 
     public void Receive(params byte[] data) => inbound.Add(data);
 
-    public void EndOfInput() => closed.Cancel();
+    public void EndOfInput() => inbound.CompleteAdding();
 
     public UartPeer CreatePeer(TimeSpan? shutdownTimeout = null) => new(Opener.Object, Opener.Object, shutdownTimeout);
 

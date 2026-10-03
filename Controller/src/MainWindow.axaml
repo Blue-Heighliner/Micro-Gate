@@ -103,7 +103,7 @@
                             <TextBlock Text="Columns" Classes="field-label" />
                             <TextBox x:Name="ColumnsTextBox" Grid.Column="1" TextChanged="Columns_TextChanged" />
                         </Grid>
-                        <Grid ColumnDefinitions="50,*">
+                        <Grid x:Name="ViewPanel" ColumnDefinitions="50,*">
                             <TextBlock Text="View" Classes="field-label" />
                             <ComboBox x:Name="LogViewComboBox" Grid.Column="1" SelectionChanged="LogView_SelectionChanged" />
                         </Grid>

@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// The peer options, shown in an expandable sidebar section: the link settings that must match the remote station, and, depending on the <see cref="ControllerMode"/>, the transmit and connection settings.
+/// The port options, shown in an expandable sidebar section: for an HDLC mode the link settings that must match the remote station and, depending on the <see cref="ControllerMode"/>, the transmit and connection settings; for a UART mode the line settings.
 /// </summary>
 internal sealed partial class OptionsPanel : UserControl
 {
@@ -31,6 +31,13 @@ internal sealed partial class OptionsPanel : UserControl
         AcknowledgeDelayTextBox.Text = FormatSeconds(defaults.AcknowledgeDelay);
         DisablePollFinalCheckBox.IsChecked = defaults.DisablePollFinalBit;
         LoopbackCheckBox.IsChecked = defaults.Loopback;
+        UartPeerOptions uartDefaults = new();
+        BaudRateTextBox.Text = uartDefaults.BaudRate.ToString(CultureInfo.InvariantCulture);
+        DataBitsComboBox.ItemsSource = new[] { 5, 6, 7, 8 };
+        DataBitsComboBox.SelectedItem = uartDefaults.DataBits;
+        StopBitsComboBox.Fill(uartDefaults.StopBits);
+        ParityComboBox.Fill(uartDefaults.Parity);
+        UartLoopbackCheckBox.IsChecked = uartDefaults.Loopback;
         MaxInfoFieldTextBox.TextChanged += (_, _) =>
         {
             if (int.TryParse(MaxInfoFieldTextBox.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int size) && size is >= 1 and <= 4090)
@@ -48,13 +55,40 @@ internal sealed partial class OptionsPanel : UserControl
     public event EventHandler<int>? MaxInfoFieldChanged;
 
     /// <summary>
-    /// Shows only the settings that apply to a mode: the link settings always, the transmit settings in peer and passthrough mode, and the connection settings in peer mode.
+    /// Shows only the settings that apply to a mode: the line settings in a UART mode, otherwise the link settings, plus the transmit settings in HDLC peer and passthrough mode and the connection settings in HDLC peer mode.
     /// </summary>
     /// <param name="mode">The mode the controller is in.</param>
     public void SetMode(ControllerMode mode)
     {
-        TransmitPanel.IsVisible = mode != ControllerMode.Monitor;
-        ConnectionPanel.IsVisible = mode == ControllerMode.Peer;
+        UartPanel.IsVisible = mode.IsUart;
+        HdlcPanel.IsVisible = !mode.IsUart;
+        TransmitPanel.IsVisible = mode != ControllerMode.HdlcMonitor;
+        ConnectionPanel.IsVisible = mode == ControllerMode.HdlcPeer;
+    }
+
+    /// <summary>
+    /// Reads the line settings into UART peer options.
+    /// </summary>
+    /// <param name="error">A description of the first invalid setting when this returns <see langword="null"/>.</param>
+    /// <returns>The options, or <see langword="null"/> if a setting is invalid.</returns>
+    public UartPeerOptions? BuildUart(out string error)
+    {
+        problem = null;
+        error = string.Empty;
+        if (!TryParseInt(BaudRateTextBox, "Baud rate", 1, int.MaxValue, out int baudRate))
+        {
+            error = problem ?? "A setting is invalid.";
+            return null;
+        }
+
+        return new UartPeerOptions
+        {
+            BaudRate = baudRate,
+            DataBits = DataBitsComboBox.SelectedItem is int dataBits ? dataBits : new UartPeerOptions().DataBits,
+            StopBits = StopBitsComboBox.Pick<UartStopBits>(),
+            Parity = ParityComboBox.Pick<UartParity>(),
+            Loopback = UartLoopbackCheckBox.IsChecked == true,
+        };
     }
 
     /// <summary>
@@ -76,7 +110,7 @@ internal sealed partial class OptionsPanel : UserControl
         TimeSpan acknowledgeDelay = defaults.AcknowledgeDelay;
 
         bool valid = TryParseInt(ClockSpeedTextBox, "Clock speed", 1, int.MaxValue, out int clockSpeed);
-        if (valid && mode == ControllerMode.Peer)
+        if (valid && mode == ControllerMode.HdlcPeer)
         {
             valid = TryParseInt(MaxInfoFieldTextBox, "Max info field", 1, 4090, out maxInfoField)
                 && TryParseInt(TransmitWindowTextBox, "Transmit window", 1, 7, out transmitWindow)
@@ -113,14 +147,14 @@ internal sealed partial class OptionsPanel : UserControl
             PreamblePattern = PreamblePatternComboBox.Pick<HdlcPreamblePattern>(),
             PreambleLength = PreambleLengthComboBox.Pick<HdlcPreambleLength>(),
             UnderrunAction = UnderrunComboBox.Pick<HdlcUnderrunAction>(),
-            DisablePollFinalBit = mode == ControllerMode.Peer ? DisablePollFinalCheckBox.IsChecked == true : defaults.DisablePollFinalBit,
+            DisablePollFinalBit = mode == ControllerMode.HdlcPeer ? DisablePollFinalCheckBox.IsChecked == true : defaults.DisablePollFinalBit,
             MaxInfoField = maxInfoField,
             RetryInterval = retryInterval,
             RetransmitInterval = retransmitInterval,
             MaxRetransmissions = maxRetransmissions,
             AcknowledgeDelay = acknowledgeDelay,
             TransmitWindow = transmitWindow,
-            Loopback = mode == ControllerMode.Peer && LoopbackCheckBox.IsChecked == true,
+            Loopback = mode == ControllerMode.HdlcPeer && LoopbackCheckBox.IsChecked == true,
         };
     }
 

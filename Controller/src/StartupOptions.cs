@@ -8,7 +8,7 @@ internal sealed record StartupOptions
     /// <summary>
     /// Gets the mode the window opens in.
     /// </summary>
-    public ControllerMode InitialMode { get; init; } = ControllerMode.Peer;
+    public ControllerMode InitialMode { get; init; } = ControllerMode.HdlcPeer;
 
     /// <summary>
     /// Gets the local address to open with, or <see langword="null"/> to keep the default.

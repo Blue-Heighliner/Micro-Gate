@@ -5,19 +5,22 @@ public sealed class StartupParserTests
     private readonly StartupParser parser = new();
 
     [Fact]
-    public void Parse_WithoutArguments_OpensInPeerMode()
+    public void Parse_WithoutArguments_OpensInHdlcPeerMode()
     {
         StartupOptions options = parser.Parse([]);
 
-        Assert.Equal(ControllerMode.Peer, options.InitialMode);
+        Assert.Equal(ControllerMode.HdlcPeer, options.InitialMode);
         Assert.Null(options.Problem);
     }
 
     [Theory]
-    [InlineData("Monitor", "Monitor")]
-    [InlineData("monitor", "Monitor")]
-    [InlineData("PASSTHROUGH", "Passthrough")]
-    [InlineData("Peer", "Peer")]
+    [InlineData("HdlcMonitor", "HdlcMonitor")]
+    [InlineData("hdlcmonitor", "HdlcMonitor")]
+    [InlineData("HDLC Passthrough", "HdlcPassthrough")]
+    [InlineData("hdlc-peer", "HdlcPeer")]
+    [InlineData("UartPeer", "UartPeer")]
+    [InlineData("uart_monitor", "UartMonitor")]
+    [InlineData("UART PASSTHROUGH", "UartPassthrough")]
     public void Parse_ModeAsASeparateArgument_SetsTheInitialMode(string value, string expected)
     {
         StartupOptions options = parser.Parse(["--mode", value]);
@@ -28,21 +31,24 @@ public sealed class StartupParserTests
 
     [Fact]
     public void Parse_ModeWithAnEqualsSign_SetsTheInitialMode() =>
-        Assert.Equal(ControllerMode.Passthrough, parser.Parse(["--mode=Passthrough"]).InitialMode);
+        Assert.Equal(ControllerMode.HdlcPassthrough, parser.Parse(["--mode=HdlcPassthrough"]).InitialMode);
 
     [Fact]
     public void Parse_IgnoresUnrelatedArguments() =>
-        Assert.Equal(ControllerMode.Monitor, parser.Parse(["--other", "--mode", "Monitor", "extra"]).InitialMode);
+        Assert.Equal(ControllerMode.HdlcMonitor, parser.Parse(["--other", "--mode", "HdlcMonitor", "extra"]).InitialMode);
 
     [Theory]
     [InlineData("Nonsense")]
+    [InlineData("Peer")]
+    [InlineData("Monitor")]
+    [InlineData("1")]
     [InlineData("7")]
     [InlineData("")]
-    public void Parse_WithAnUnknownMode_FallsBackToPeerAndReportsAProblem(string value)
+    public void Parse_WithAnUnknownMode_FallsBackToHdlcPeerAndReportsAProblem(string value)
     {
         StartupOptions options = parser.Parse(["--mode", value]);
 
-        Assert.Equal(ControllerMode.Peer, options.InitialMode);
+        Assert.Equal(ControllerMode.HdlcPeer, options.InitialMode);
         Assert.Contains("Unknown mode", options.Problem);
     }
 
@@ -53,7 +59,7 @@ public sealed class StartupParserTests
     [Fact]
     public void Parse_Addresses_SetsLocalAndRemote()
     {
-        StartupOptions options = parser.Parse(["--local", "45", "--remote=19", "--mode", "Peer"]);
+        StartupOptions options = parser.Parse(["--local", "45", "--remote=19", "--mode", "HdlcPeer"]);
 
         Assert.Equal((byte)45, options.LocalAddress);
         Assert.Equal((byte)19, options.RemoteAddress);
@@ -63,7 +69,7 @@ public sealed class StartupParserTests
     [Fact]
     public void Parse_WithoutAddresses_LeavesThemUnset()
     {
-        StartupOptions options = parser.Parse(["--mode", "Monitor"]);
+        StartupOptions options = parser.Parse(["--mode", "HdlcMonitor"]);
 
         Assert.Null(options.LocalAddress);
         Assert.Null(options.RemoteAddress);
@@ -77,11 +83,11 @@ public sealed class StartupParserTests
     [InlineData("")]
     public void Parse_WithAnInvalidAddress_ReportsAProblemAndKeepsTheRest(string value)
     {
-        StartupOptions options = parser.Parse(["--local", value, "--remote", "3", "--mode", "Monitor"]);
+        StartupOptions options = parser.Parse(["--local", value, "--remote", "3", "--mode", "HdlcMonitor"]);
 
         Assert.Null(options.LocalAddress);
         Assert.Equal((byte)3, options.RemoteAddress);
-        Assert.Equal(ControllerMode.Monitor, options.InitialMode);
+        Assert.Equal(ControllerMode.HdlcMonitor, options.InitialMode);
         Assert.Contains("local address", options.Problem);
     }
 
