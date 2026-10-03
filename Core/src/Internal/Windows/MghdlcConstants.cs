@@ -31,9 +31,14 @@ internal static class MghdlcConstants
     public static readonly uint OptionInterface = 6;
 
     /// <summary>
-    /// The <c>MGSL_OPT_RX_ERROR_MASK</c> option id for <c>MgslSetOption</c>, which makes the driver silently discard HDLC frames received with errors. Without it <c>MgslRead</c> returns zero for each such frame, which is indistinguishable from a cancelled read.
+    /// The <c>MGSL_OPT_RX_ERROR_MASK</c> option id for <c>MgslSetOption</c>, which makes the driver silently discard HDLC frames received with errors. Without it <c>MgslReadWithStatus</c> returns zero for each such frame, which is indistinguishable from a cancelled read.
     /// </summary>
     public static readonly uint OptionReceiveErrorMask = 8;
+
+    /// <summary>
+    /// The <c>RxStatus_OK</c> status of <c>MgslReadWithStatus</c>: the read completed normally, so a zero byte count means a frame with no data bytes (a cancelled read reports <c>RxStatus_Cancel</c>).
+    /// </summary>
+    public static readonly int RxStatusOk = 0;
 
     /// <summary>
     /// The value that turns a boolean <c>MgslSetOption</c> option on.
@@ -49,6 +54,11 @@ internal static class MghdlcConstants
     /// The <c>MgslOpenByName</c> success status.
     /// </summary>
     public static readonly uint Success = 0;
+
+    /// <summary>
+    /// The Win32 <c>ERROR_DEVICE_IN_USE</c> code, which opening a port returns while another handle to it is open or still being released after a close.
+    /// </summary>
+    public static readonly uint DeviceInUse = 2404;
 
     /// <summary>
     /// The <c>HDLC_FLAG_RXC_TXCPIN</c> bit of <see cref="MghdlcParams.Flags"/>: the receive clock comes from the transmit clock (TXC) pin.

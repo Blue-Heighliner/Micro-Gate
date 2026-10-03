@@ -20,6 +20,33 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     }
 
     [Fact]
+    public void Open_WhileTheDriverStillHoldsThePort_RetriesUntilItIsReleased()
+    {
+        int attempts = 0;
+        nint released = 9;
+        native.Setup(x => x.OpenByName("COM3", out released)).Returns(() => ++attempts < 3 ? 2404u : 0u);
+        WindowsMicroGateDeviceOpener opener = new(native.Object, TimeSpan.FromSeconds(5));
+
+        IMicroGateDevice device = opener.Open("COM3", new MicroGatePeerOptions());
+
+        Assert.NotNull(device);
+        Assert.Equal(3, attempts);
+    }
+
+    [Fact]
+    public void Open_WhenThePortStaysInUse_GivesUpAfterTheRetryWindow()
+    {
+        nint busy = 0;
+        native.Setup(x => x.OpenByName("COM4", out busy)).Returns(2404u);
+        WindowsMicroGateDeviceOpener opener = new(native.Object, TimeSpan.FromMilliseconds(200));
+
+        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM4", new MicroGatePeerOptions()));
+
+        Assert.Contains("COM4", exception.Message);
+        native.Verify(x => x.OpenByName("COM4", out busy), Times.AtLeast(2));
+    }
+
+    [Fact]
     public void Open_ConfiguresPortFromOptionsAndReturnsDevice()
     {
         MicroGatePeerOptions options = new()

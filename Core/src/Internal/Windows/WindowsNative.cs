@@ -76,7 +76,7 @@ internal interface IWindowsNative
     uint CancelReceive(nint handle);
 
     /// <summary>
-    /// Reads one frame, blocking until one is available.
+    /// Reads one frame, blocking until one is available. A frame with no data bytes is skipped rather than reported as zero.
     /// </summary>
     /// <param name="handle">The device handle.</param>
     /// <param name="buffer">The buffer to receive the frame.</param>
@@ -149,7 +149,17 @@ internal sealed class WindowsNative : IWindowsNative
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]
-    public int Read(nint handle, byte[] buffer) => Mghdlc.MgslRead(handle, buffer, buffer.Length);
+    public int Read(nint handle, byte[] buffer)
+    {
+        while (true)
+        {
+            int count = Mghdlc.MgslReadWithStatus(handle, buffer, buffer.Length, out int status);
+            if (count != 0 || status != MghdlcConstants.RxStatusOk)
+            {
+                return count;
+            }
+        }
+    }
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]

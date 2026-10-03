@@ -67,7 +67,7 @@ internal static partial class Mghdlc
     public static partial uint MgslSetOption(nint handle, uint optionId, uint value);
 
     /// <summary>
-    /// Enables or disables the receiver, per <c>MgslEnableReceiver</c>. Disabling cancels a blocked <see cref="MgslRead"/>.
+    /// Enables or disables the receiver, per <c>MgslEnableReceiver</c>. Disabling cancels a blocked <see cref="MgslReadWithStatus"/>.
     /// </summary>
     /// <param name="handle">The device handle.</param>
     /// <param name="enableFlag">Non-zero to enable, zero to disable.</param>
@@ -97,15 +97,16 @@ internal static partial class Mghdlc
     public static partial int MgslWaitAllSent(nint handle);
 
     /// <summary>
-    /// Blocks until an entire HDLC frame has been read, per <c>MgslRead</c>.
+    /// Blocks until an entire HDLC frame has been read, per <c>MgslReadWithStatus</c>.
     /// </summary>
     /// <param name="handle">The device handle.</param>
     /// <param name="buffer">The buffer to receive the frame bytes.</param>
     /// <param name="size">The capacity of <paramref name="buffer"/>.</param>
+    /// <param name="status">Receives the <c>RxStatus_*</c> result, which tells a cancelled read from a frame with no data bytes, both of which return zero.</param>
     /// <returns>The number of bytes read.</returns>
-    [LibraryImport("mghdlc.dll", EntryPoint = "MgslRead")]
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslReadWithStatus")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
-    public static partial int MgslRead(nint handle, byte[] buffer, int size);
+    public static partial int MgslReadWithStatus(nint handle, byte[] buffer, int size, out int status);
 
     /// <summary>
     /// Cancels a blocked <see cref="MgslWrite"/> issued from another thread, per <c>MgslCancelTransmit</c>.
@@ -117,7 +118,7 @@ internal static partial class Mghdlc
     public static partial uint MgslCancelTransmit(nint handle);
 
     /// <summary>
-    /// Cancels a blocked <see cref="MgslRead"/> issued from another thread, per <c>MgslCancelReceive</c>.
+    /// Cancels a blocked <see cref="MgslReadWithStatus"/> issued from another thread, per <c>MgslCancelReceive</c>.
     /// </summary>
     /// <param name="handle">The device handle.</param>
     /// <returns>0 on success, or a Win32 error code.</returns>

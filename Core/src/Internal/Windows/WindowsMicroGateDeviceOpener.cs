@@ -4,12 +4,16 @@ namespace BlueHeighliner.MicroGate.Windows;
 /// Opens and configures MicroGate SyncLink devices installed on a Windows system. A port name is a device name as reported by <see cref="IWindowsMicroGatePorts.GetPorts"/>.
 /// </summary>
 /// <param name="native">The native device operations.</param>
-internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMicroGateDeviceOpener
+/// <param name="busyRetryWindow">How long an open keeps retrying while the driver reports the device in use, or <see langword="null"/> for three seconds.</param>
+internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native, TimeSpan? busyRetryWindow = null) : IMicroGateDeviceOpener
 {
+    private readonly TimeSpan busyRetryWindow = busyRetryWindow ?? TimeSpan.FromSeconds(3);
+    private readonly TimeSpan busyRetryInterval = TimeSpan.FromMilliseconds(50);
+
     /// <inheritdoc />
     public IMicroGateDevice Open(string portName, MicroGatePeerOptions options)
     {
-        uint openStatus = native.OpenByName(portName, out nint handle);
+        uint openStatus = OpenWhenReleased(portName, out nint handle);
         if (openStatus != MghdlcConstants.Success)
         {
             throw new IOException($"Failed to open '{portName}'.", new Win32Exception((int)openStatus));
@@ -27,6 +31,20 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native) : IMic
         }
 
         return device;
+    }
+
+    private uint OpenWhenReleased(string portName, out nint handle)
+    {
+        // The driver keeps a port reserved for up to a second after MgslClose returns, so reopening right after a dispose reports it in use; Linux releases it at once.
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        uint status = native.OpenByName(portName, out handle);
+        while (status == MghdlcConstants.DeviceInUse && stopwatch.Elapsed < busyRetryWindow)
+        {
+            Thread.Sleep(busyRetryInterval);
+            status = native.OpenByName(portName, out handle);
+        }
+
+        return status;
     }
 
     private void ConfigurePort(nint handle, MicroGatePeerOptions options)
