@@ -13,7 +13,7 @@ internal static class Program
     public static void Main(string[] args)
     {
         ServiceCollection services = new();
-        services.AddConventionServices(typeof(IMicroGatePeerFactory).Assembly);
+        services.AddConventionServices(typeof(IHdlcPeerFactory).Assembly);
         services.AddTransient<IFrameDescriber, FrameDescriber>();
         services.AddTransient<ILogSerializer, LogSerializer>();
         services.AddTransient<IStartupParser, StartupParser>();

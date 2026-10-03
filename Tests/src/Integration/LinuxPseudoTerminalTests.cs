@@ -18,7 +18,7 @@ public sealed class LinuxPseudoTerminalTests
             return;
         }
 
-        MicroGatePeerOptions options = new();
+        HdlcPeerOptions options = new();
         HdlcStateMachine peer = new(options, 0x34, 0x33);
         BlockingCollection<byte[]> peerPayloads = [];
         TaskCompletionSource peerSawDisconnect = new();
@@ -65,9 +65,9 @@ public sealed class LinuxPseudoTerminalTests
             }
         });
 
-        IMicroGatePeer connection = new MicroGatePeer(new LinuxMicroGateDeviceOpener(new TolerantLinuxNative(new LinuxNative())), new Mock<IMicroGateDeviceOpener>().Object);
+        IHdlcPeer connection = new HdlcPeer(new LinuxMicroGateDeviceOpener(new TolerantLinuxNative(new LinuxNative())), new Mock<IMicroGateDeviceOpener>().Object);
         PayloadObserver received = new();
-        TestObserver<MicroGatePeerState> states = new();
+        TestObserver<HdlcPeerState> states = new();
         connection.Receiver = received.Receive;
         connection.StateChanged.Subscribe(states);
 
@@ -97,6 +97,6 @@ public sealed class LinuxPseudoTerminalTests
         await peerLoop.WaitAsync(timeout);
         terminal.CloseMaster();
         await dispose.WaitAsync(timeout);
-        Assert.Equal([MicroGatePeerState.Ready, MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
+        Assert.Equal([HdlcPeerState.Ready, HdlcPeerState.Connecting, HdlcPeerState.Connected, HdlcPeerState.Disconnected], states.Seen);
     }
 }

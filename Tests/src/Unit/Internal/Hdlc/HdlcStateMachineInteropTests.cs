@@ -8,7 +8,7 @@ public sealed class HdlcStateMachineInteropTests
     [Fact]
     public void AsTheDte_ReproducesTheCapturedExchange()
     {
-        using HdlcStateMachine dte = new(new MicroGatePeerOptions(), dteAddress, dceAddress);
+        using HdlcStateMachine dte = new(new HdlcPeerOptions(), dteAddress, dceAddress);
 
         Assert.Equal([255, 47], dte.CreateConnect().ToArray());
 
@@ -42,7 +42,7 @@ public sealed class HdlcStateMachineInteropTests
     [Fact]
     public void AsTheDce_ReproducesTheCapturedExchange()
     {
-        using HdlcStateMachine dce = new(new MicroGatePeerOptions(), dceAddress, dteAddress);
+        using HdlcStateMachine dce = new(new HdlcPeerOptions(), dceAddress, dteAddress);
 
         HdlcReceiveResult connected = dce.Receive(new byte[] { 255, 47 });
         Assert.Equal(HdlcConnectionState.Connected, dce.State);
@@ -74,7 +74,7 @@ public sealed class HdlcStateMachineInteropTests
     [Fact]
     public void AsTheDte_WhenThePollAnswerShowsAFrameWasNotReceived_ResendsIt()
     {
-        using HdlcStateMachine dte = new(new MicroGatePeerOptions(), dteAddress, dceAddress);
+        using HdlcStateMachine dte = new(new HdlcPeerOptions(), dteAddress, dceAddress);
         dte.CreateConnect();
         dte.Receive(new byte[] { 19, 99 });
         dte.CreateInformation(new byte[] { 0xBB });
@@ -90,7 +90,7 @@ public sealed class HdlcStateMachineInteropTests
     [Fact]
     public void AsTheDce_WithPollFinalDisabled_StillAnswersAPollWithAFinalResponse()
     {
-        using HdlcStateMachine dce = new(new MicroGatePeerOptions { DisablePollFinalBit = true }, dceAddress, dteAddress);
+        using HdlcStateMachine dce = new(new HdlcPeerOptions { DisablePollFinalBit = true }, dceAddress, dteAddress);
         dce.Receive(new byte[] { 255, 47 });
 
         HdlcReceiveResult poll = dce.Receive(new byte[] { 19, 0x11 });

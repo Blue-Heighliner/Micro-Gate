@@ -18,6 +18,10 @@ internal sealed class TolerantLinuxNative(ILinuxNative inner) : ILinuxNative
 
     public int SelectHdlcLineDiscipline(int fileDescriptor) => 0;
 
+    public int SelectTtyLineDiscipline(int fileDescriptor) => 0;
+
+    public int ConfigureAsynchronous(int fileDescriptor, int baudRate, int dataBits, int stopBits, int parity) => inner.ConfigureAsynchronous(fileDescriptor, baudRate, dataBits, stopBits, parity);
+
     public int SetParams(int fileDescriptor, SynclinkParams parameters) => 0;
 
     public int SetTransmitIdle(int fileDescriptor, int idlePattern) => 0;

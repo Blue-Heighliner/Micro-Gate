@@ -12,7 +12,7 @@ internal sealed partial class OptionsPanel : UserControl
     {
         InitializeComponent();
 
-        MicroGatePeerOptions defaults = new();
+        HdlcPeerOptions defaults = new();
         EncodingComboBox.Fill(defaults.Link.Encoding);
         CrcComboBox.Fill(defaults.Link.Crc);
         ReceiveClockComboBox.Fill(defaults.Link.ReceiveClockSource);
@@ -63,11 +63,11 @@ internal sealed partial class OptionsPanel : UserControl
     /// <param name="mode">The mode the controller is in.</param>
     /// <param name="error">A description of the first invalid setting when this returns <see langword="null"/>.</param>
     /// <returns>The options, or <see langword="null"/> if a setting is invalid.</returns>
-    public MicroGatePeerOptions? Build(ControllerMode mode, out string error)
+    public HdlcPeerOptions? Build(ControllerMode mode, out string error)
     {
         problem = null;
         error = string.Empty;
-        MicroGatePeerOptions defaults = new();
+        HdlcPeerOptions defaults = new();
         int maxInfoField = defaults.MaxInfoField;
         int transmitWindow = defaults.TransmitWindow;
         TimeSpan? retryInterval = defaults.RetryInterval;
@@ -98,21 +98,21 @@ internal sealed partial class OptionsPanel : UserControl
             return null;
         }
 
-        return new MicroGatePeerOptions
+        return new HdlcPeerOptions
         {
-            Link = new MicroGateLinkOptions
+            Link = new HdlcLinkOptions
             {
-                Encoding = EncodingComboBox.Pick<MicroGateEncoding>(),
-                Crc = CrcComboBox.Pick<MicroGateCrc>(),
-                ReceiveClockSource = ReceiveClockComboBox.Pick<MicroGateReceiveClockSource>(),
-                TransmitClockSource = TransmitClockComboBox.Pick<MicroGateTransmitClockSource>(),
-                PhaseLockedLoopDivisor = DivisorComboBox.Pick<MicroGatePhaseLockedLoopDivisor>(),
+                Encoding = EncodingComboBox.Pick<HdlcEncoding>(),
+                Crc = CrcComboBox.Pick<HdlcCrc>(),
+                ReceiveClockSource = ReceiveClockComboBox.Pick<HdlcReceiveClockSource>(),
+                TransmitClockSource = TransmitClockComboBox.Pick<HdlcTransmitClockSource>(),
+                PhaseLockedLoopDivisor = DivisorComboBox.Pick<HdlcPhaseLockedLoopDivisor>(),
                 ClockSpeed = clockSpeed,
             },
-            IdlePattern = IdlePatternComboBox.Pick<MicroGateIdlePattern>(),
-            PreamblePattern = PreamblePatternComboBox.Pick<MicroGatePreamblePattern>(),
-            PreambleLength = PreambleLengthComboBox.Pick<MicroGatePreambleLength>(),
-            UnderrunAction = UnderrunComboBox.Pick<MicroGateUnderrunAction>(),
+            IdlePattern = IdlePatternComboBox.Pick<HdlcIdlePattern>(),
+            PreamblePattern = PreamblePatternComboBox.Pick<HdlcPreamblePattern>(),
+            PreambleLength = PreambleLengthComboBox.Pick<HdlcPreambleLength>(),
+            UnderrunAction = UnderrunComboBox.Pick<HdlcUnderrunAction>(),
             DisablePollFinalBit = mode == ControllerMode.Peer ? DisablePollFinalCheckBox.IsChecked == true : defaults.DisablePollFinalBit,
             MaxInfoField = maxInfoField,
             RetryInterval = retryInterval,

@@ -30,19 +30,19 @@ internal interface IHdlcStateMachine : IDisposable
     bool PeerBusy { get; }
 
     /// <summary>
-    /// Creates a <see cref="HdlcFrameKind.SetAsynchronousBalancedMode"/> frame requesting the peer establish a connection, and transitions the state machine to <see cref="HdlcConnectionState.Connecting"/>.
+    /// Creates a <see cref="HdlcWireFrameKind.SetAsynchronousBalancedMode"/> frame requesting the peer establish a connection, and transitions the state machine to <see cref="HdlcConnectionState.Connecting"/>.
     /// </summary>
     /// <returns>The raw frame bytes to transmit.</returns>
     ReadOnlyMemory<byte> CreateConnect();
 
     /// <summary>
-    /// Creates a <see cref="HdlcFrameKind.Disconnect"/> frame requesting the peer terminate the connection, and transitions the state machine to <see cref="HdlcConnectionState.Disconnecting"/>.
+    /// Creates a <see cref="HdlcWireFrameKind.Disconnect"/> frame requesting the peer terminate the connection, and transitions the state machine to <see cref="HdlcConnectionState.Disconnecting"/>.
     /// </summary>
     /// <returns>The raw frame bytes to transmit.</returns>
     ReadOnlyMemory<byte> CreateDisconnect();
 
     /// <summary>
-    /// Creates a <see cref="HdlcFrameKind.Information"/> frame carrying a copy of <paramref name="payload"/>, addressed with the next send sequence number, and keeps it until it is acknowledged.
+    /// Creates a <see cref="HdlcWireFrameKind.Information"/> frame carrying a copy of <paramref name="payload"/>, addressed with the next send sequence number, and keeps it until it is acknowledged.
     /// </summary>
     /// <param name="payload">The data to carry in the frame's information field.</param>
     /// <returns>The raw frame bytes to transmit.</returns>
@@ -50,7 +50,7 @@ internal interface IHdlcStateMachine : IDisposable
     ReadOnlyMemory<byte> CreateInformation(ReadOnlyMemory<byte> payload);
 
     /// <summary>
-    /// Creates a <see cref="HdlcFrameKind.Information"/> frame carrying the memory of <paramref name="payload"/>, addressed with the next send sequence number, and keeps it, without copying, until it is acknowledged. Ownership of <paramref name="payload"/> passes to the state machine only if the call succeeds; it is then disposed once the frame is acknowledged, discarded, or the state machine is reset or disposed.
+    /// Creates a <see cref="HdlcWireFrameKind.Information"/> frame carrying the memory of <paramref name="payload"/>, addressed with the next send sequence number, and keeps it, without copying, until it is acknowledged. Ownership of <paramref name="payload"/> passes to the state machine only if the call succeeds; it is then disposed once the frame is acknowledged, discarded, or the state machine is reset or disposed.
     /// </summary>
     /// <param name="payload">The owner of the data to carry in the frame's information field.</param>
     /// <returns>The raw frame bytes to transmit.</returns>
@@ -64,7 +64,7 @@ internal interface IHdlcStateMachine : IDisposable
     IReadOnlyList<ReadOnlyMemory<byte>> CreateRetransmission();
 
     /// <summary>
-    /// Gets a value indicating whether information frames have been received that no frame sent since has acknowledged yet. The caller is expected to call <see cref="CreateAcknowledgement"/> after <see cref="MicroGatePeerOptions.AcknowledgeDelay"/> if no information frame has carried the acknowledgement by then.
+    /// Gets a value indicating whether information frames have been received that no frame sent since has acknowledged yet. The caller is expected to call <see cref="CreateAcknowledgement"/> after <see cref="HdlcPeerOptions.AcknowledgeDelay"/> if no information frame has carried the acknowledgement by then.
     /// </summary>
     bool AcknowledgementPending { get; }
 
@@ -90,7 +90,7 @@ internal interface IHdlcStateMachine : IDisposable
     /// </summary>
     /// <param name="data">The raw received frame bytes.</param>
     /// <returns>The <see cref="HdlcReceiveResult"/> describing how the frame was processed.</returns>
-    /// <exception cref="HdlcFrameException">The frame is too short to contain an address and a control field.</exception>
+    /// <exception cref="HdlcWireFrameException">The frame is too short to contain an address and a control field.</exception>
     HdlcReceiveResult Receive(ReadOnlyMemory<byte> data);
 }
 
@@ -100,7 +100,7 @@ internal interface IHdlcStateMachine : IDisposable
 /// <param name="options">The peer options whose poll/final and window settings apply to every frame produced and every frame accepted.</param>
 /// <param name="address">The address of this station, carried by every response it sends and expected on every command it receives.</param>
 /// <param name="remoteAddress">The address of the remote station, carried by every command this station sends and expected on every response it receives. Must differ from <paramref name="address"/>.</param>
-internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte address, byte remoteAddress) : IHdlcStateMachine
+internal sealed class HdlcStateMachine(HdlcPeerOptions options, byte address, byte remoteAddress) : IHdlcStateMachine
 {
     private readonly int sequenceModulus = 8;
     private readonly byte pollFinalMask = 0x10;
@@ -146,14 +146,14 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         Restart();
         pendingConnectRequests++;
         State = HdlcConnectionState.Connecting;
-        return CreateUnnumberedFrame(HdlcFrameKind.SetAsynchronousBalancedMode, broadcastAddress, poll: false);
+        return CreateUnnumberedFrame(HdlcWireFrameKind.SetAsynchronousBalancedMode, broadcastAddress, poll: false);
     }
 
     /// <inheritdoc />
     public ReadOnlyMemory<byte> CreateDisconnect()
     {
         State = HdlcConnectionState.Disconnecting;
-        return CreateUnnumberedFrame(HdlcFrameKind.Disconnect, RemoteAddress, poll: false);
+        return CreateUnnumberedFrame(HdlcWireFrameKind.Disconnect, RemoteAddress, poll: false);
     }
 
     /// <inheritdoc />
@@ -176,7 +176,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 
     /// <inheritdoc />
     public ReadOnlyMemory<byte> CreateAcknowledgement() =>
-        acknowledgementPending && State == HdlcConnectionState.Connected ? CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, final: false) : ReadOnlyMemory<byte>.Empty;
+        acknowledgementPending && State == HdlcConnectionState.Connected ? CreateSupervisoryFrame(HdlcWireFrameKind.ReceiveReady, final: false) : ReadOnlyMemory<byte>.Empty;
 
     /// <inheritdoc />
     public IReadOnlyList<ReadOnlyMemory<byte>> CreateTimeoutRecovery()
@@ -188,7 +188,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 
         pollOutstanding = true;
         ClearPendingAcknowledgement();
-        return [new HdlcFrame { Address = RemoteAddress, Kind = HdlcFrameKind.ReceiveReady, PollFinal = true, ReceiveSequence = receiveSequence }.ToArray()];
+        return [new HdlcWireFrame { Address = RemoteAddress, Kind = HdlcWireFrameKind.ReceiveReady, PollFinal = true, ReceiveSequence = receiveSequence }.ToArray()];
     }
 
     /// <inheritdoc />
@@ -220,12 +220,12 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     /// <inheritdoc />
     public HdlcReceiveResult Receive(ReadOnlyMemory<byte> data)
     {
-        HdlcFrame frame;
+        HdlcWireFrame frame;
         try
         {
-            frame = HdlcFrame.Parse(data);
+            frame = HdlcWireFrame.Parse(data);
         }
-        catch (HdlcFrameException) when (data.Length >= 2)
+        catch (HdlcWireFrameException) when (data.Length >= 2)
         {
             return ReceiveUnrecognized(data);
         }
@@ -241,13 +241,13 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 
         return frame.Kind switch
         {
-            HdlcFrameKind.SetAsynchronousBalancedMode when command => ReceiveSetAsynchronousBalancedMode(frame),
-            HdlcFrameKind.Disconnect when command => ReceiveDisconnect(frame),
-            HdlcFrameKind.UnnumberedAcknowledge when response => ReceiveUnnumberedAcknowledge(),
-            HdlcFrameKind.DisconnectedMode or HdlcFrameKind.FrameReject when response => ReceiveTerminal(),
-            HdlcFrameKind.Information when command => ReceiveInformation(frame),
-            HdlcFrameKind.ReceiveReady or HdlcFrameKind.ReceiveNotReady => ReceiveSupervisory(frame, retransmit: false, command),
-            HdlcFrameKind.Reject => ReceiveSupervisory(frame, retransmit: true, command),
+            HdlcWireFrameKind.SetAsynchronousBalancedMode when command => ReceiveSetAsynchronousBalancedMode(frame),
+            HdlcWireFrameKind.Disconnect when command => ReceiveDisconnect(frame),
+            HdlcWireFrameKind.UnnumberedAcknowledge when response => ReceiveUnnumberedAcknowledge(),
+            HdlcWireFrameKind.DisconnectedMode or HdlcWireFrameKind.FrameReject when response => ReceiveTerminal(),
+            HdlcWireFrameKind.Information when command => ReceiveInformation(frame),
+            HdlcWireFrameKind.ReceiveReady or HdlcWireFrameKind.ReceiveNotReady => ReceiveSupervisory(frame, retransmit: false, command),
+            HdlcWireFrameKind.Reject => ReceiveSupervisory(frame, retransmit: true, command),
             _ => new HdlcReceiveResult { State = State },
         };
     }
@@ -267,7 +267,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         {
             if (Array.IndexOf(unsupportedModeCommands, command) >= 0)
             {
-                return new HdlcReceiveResult { State = State, Response = CreateUnnumberedFrame(HdlcFrameKind.DisconnectedMode, LocalAddress, poll: final) };
+                return new HdlcReceiveResult { State = State, Response = CreateUnnumberedFrame(HdlcWireFrameKind.DisconnectedMode, LocalAddress, poll: final) };
             }
 
             if (command == testControl)
@@ -287,7 +287,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         return new HdlcReceiveResult { State = State, Response = CreateFrameReject(control, final) };
     }
 
-    private HdlcReceiveResult ReceiveSetAsynchronousBalancedMode(HdlcFrame frame)
+    private HdlcReceiveResult ReceiveSetAsynchronousBalancedMode(HdlcWireFrame frame)
     {
         bool wasConnected = State == HdlcConnectionState.Connected;
         int discarded = outstanding.Count;
@@ -308,13 +308,13 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             State = State,
             Acknowledged = discarded,
             Retransmit = outstanding.Count > 0,
-            Response = CreateUnnumberedFrame(HdlcFrameKind.UnnumberedAcknowledge, LocalAddress, frame.PollFinal),
+            Response = CreateUnnumberedFrame(HdlcWireFrameKind.UnnumberedAcknowledge, LocalAddress, frame.PollFinal),
         };
     }
 
-    private HdlcReceiveResult ReceiveDisconnect(HdlcFrame frame)
+    private HdlcReceiveResult ReceiveDisconnect(HdlcWireFrame frame)
     {
-        HdlcFrameKind answer = State == HdlcConnectionState.Disconnected ? HdlcFrameKind.DisconnectedMode : HdlcFrameKind.UnnumberedAcknowledge;
+        HdlcWireFrameKind answer = State == HdlcConnectionState.Disconnected ? HdlcWireFrameKind.DisconnectedMode : HdlcWireFrameKind.UnnumberedAcknowledge;
         State = HdlcConnectionState.Disconnected;
         return new HdlcReceiveResult
         {
@@ -355,14 +355,14 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         return new HdlcReceiveResult { State = State };
     }
 
-    private HdlcReceiveResult ReceiveSupervisory(HdlcFrame frame, bool retransmit, bool command)
+    private HdlcReceiveResult ReceiveSupervisory(HdlcWireFrame frame, bool retransmit, bool command)
     {
         if (State != HdlcConnectionState.Connected)
         {
             return ReceiveWhileNotConnected(frame);
         }
 
-        peerBusy = frame.Kind == HdlcFrameKind.ReceiveNotReady;
+        peerBusy = frame.Kind == HdlcWireFrameKind.ReceiveNotReady;
         int acknowledged = Acknowledge(frame.ReceiveSequence);
         bool poll = command && frame.PollFinal;
         bool answersPoll = !command && frame.PollFinal && pollOutstanding;
@@ -376,16 +376,16 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             State = State,
             Acknowledged = acknowledged,
             Retransmit = (retransmit || (answersPoll && !peerBusy)) && outstanding.Count > 0,
-            Response = poll ? (ReadOnlyMemory<byte>?)CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, final: true) : null,
+            Response = poll ? (ReadOnlyMemory<byte>?)CreateSupervisoryFrame(HdlcWireFrameKind.ReceiveReady, final: true) : null,
         };
     }
 
-    private HdlcReceiveResult ReceiveWhileNotConnected(HdlcFrame frame) =>
+    private HdlcReceiveResult ReceiveWhileNotConnected(HdlcWireFrame frame) =>
         State == HdlcConnectionState.Disconnected
-            ? new HdlcReceiveResult { State = State, Response = CreateUnnumberedFrame(HdlcFrameKind.DisconnectedMode, LocalAddress, frame.PollFinal) }
+            ? new HdlcReceiveResult { State = State, Response = CreateUnnumberedFrame(HdlcWireFrameKind.DisconnectedMode, LocalAddress, frame.PollFinal) }
             : new HdlcReceiveResult { State = State };
 
-    private HdlcReceiveResult ReceiveInformation(HdlcFrame frame)
+    private HdlcReceiveResult ReceiveInformation(HdlcWireFrame frame)
     {
         if (State != HdlcConnectionState.Connected)
         {
@@ -397,7 +397,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
 
         if (frame.SendSequence != receiveSequence)
         {
-            HdlcFrameKind answer = rejectSent ? HdlcFrameKind.ReceiveReady : HdlcFrameKind.Reject;
+            HdlcWireFrameKind answer = rejectSent ? HdlcWireFrameKind.ReceiveReady : HdlcWireFrameKind.Reject;
             rejectSent = true;
             return new HdlcReceiveResult
             {
@@ -417,7 +417,7 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
             State = State,
             Acknowledged = acknowledged,
             Payload = frame.Payload,
-            Response = immediate ? (ReadOnlyMemory<byte>?)CreateSupervisoryFrame(HdlcFrameKind.ReceiveReady, frame.PollFinal) : null,
+            Response = immediate ? (ReadOnlyMemory<byte>?)CreateSupervisoryFrame(HdlcWireFrameKind.ReceiveReady, frame.PollFinal) : null,
         };
     }
 
@@ -516,10 +516,10 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     private byte[] CreateInformationFrame(int sequence, ReadOnlyMemory<byte> payload)
     {
         ClearPendingAcknowledgement();
-        return new HdlcFrame
+        return new HdlcWireFrame
         {
             Address = RemoteAddress,
-            Kind = HdlcFrameKind.Information,
+            Kind = HdlcWireFrameKind.Information,
             PollFinal = false,
             SendSequence = sequence,
             ReceiveSequence = receiveSequence,
@@ -527,18 +527,18 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
         }.ToArray();
     }
 
-    private byte[] CreateUnnumberedFrame(HdlcFrameKind kind, byte address, bool poll) =>
-        new HdlcFrame
+    private byte[] CreateUnnumberedFrame(HdlcWireFrameKind kind, byte address, bool poll) =>
+        new HdlcWireFrame
         {
             Address = address,
             Kind = kind,
             PollFinal = poll && !options.DisablePollFinalBit,
         }.ToArray();
 
-    private byte[] CreateSupervisoryFrame(HdlcFrameKind kind, bool final)
+    private byte[] CreateSupervisoryFrame(HdlcWireFrameKind kind, bool final)
     {
         ClearPendingAcknowledgement();
-        return new HdlcFrame
+        return new HdlcWireFrame
         {
             Address = LocalAddress,
             Kind = kind,
@@ -548,10 +548,10 @@ internal sealed class HdlcStateMachine(MicroGatePeerOptions options, byte addres
     }
 
     private byte[] CreateFrameReject(byte rejectedControl, bool final) =>
-        new HdlcFrame
+        new HdlcWireFrame
         {
             Address = LocalAddress,
-            Kind = HdlcFrameKind.FrameReject,
+            Kind = HdlcWireFrameKind.FrameReject,
             PollFinal = final,
             Payload = new byte[] { rejectedControl, (byte)((sendSequence << 1) | (receiveSequence << 5)), 0x01 },
         }.ToArray();

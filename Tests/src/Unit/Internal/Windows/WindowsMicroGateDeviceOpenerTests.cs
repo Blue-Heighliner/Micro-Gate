@@ -14,7 +14,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
         native.Setup(x => x.OpenByName("COM2", out failedHandle)).Returns(2u);
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
-        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM2", new MicroGatePeerOptions()));
+        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM2", new HdlcPeerOptions()));
 
         Assert.Contains("COM2", exception.Message);
     }
@@ -27,7 +27,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
         native.Setup(x => x.OpenByName("COM3", out released)).Returns(() => ++attempts < 3 ? 2404u : 0u);
         WindowsMicroGateDeviceOpener opener = new(native.Object, TimeSpan.FromSeconds(5));
 
-        IMicroGateDevice device = opener.Open("COM3", new MicroGatePeerOptions());
+        IMicroGateDevice device = opener.Open("COM3", new HdlcPeerOptions());
 
         Assert.NotNull(device);
         Assert.Equal(3, attempts);
@@ -40,7 +40,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
         native.Setup(x => x.OpenByName("COM4", out busy)).Returns(2404u);
         WindowsMicroGateDeviceOpener opener = new(native.Object, TimeSpan.FromMilliseconds(200));
 
-        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM4", new MicroGatePeerOptions()));
+        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM4", new HdlcPeerOptions()));
 
         Assert.Contains("COM4", exception.Message);
         native.Verify(x => x.OpenByName("COM4", out busy), Times.AtLeast(2));
@@ -49,21 +49,21 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     [Fact]
     public void Open_ConfiguresPortFromOptionsAndReturnsDevice()
     {
-        MicroGatePeerOptions options = new()
+        HdlcPeerOptions options = new()
         {
             Link = new()
             {
-                Encoding = MicroGateEncoding.BiphaseMark,
-                Crc = MicroGateCrc.None,
-                ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
-                TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
-                PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+                Encoding = HdlcEncoding.BiphaseMark,
+                Crc = HdlcCrc.None,
+                ReceiveClockSource = HdlcReceiveClockSource.BaudRateGenerator,
+                TransmitClockSource = HdlcTransmitClockSource.PhaseLockedLoop,
+                PhaseLockedLoopDivisor = HdlcPhaseLockedLoopDivisor.DivideBy16,
                 ClockSpeed = 9600,
             },
-            IdlePattern = MicroGateIdlePattern.Mark,
-            UnderrunAction = MicroGateUnderrunAction.Flag,
-            PreambleLength = MicroGatePreambleLength.Bits32,
-            PreamblePattern = MicroGatePreamblePattern.Ones,
+            IdlePattern = HdlcIdlePattern.Mark,
+            UnderrunAction = HdlcUnderrunAction.Flag,
+            PreambleLength = HdlcPreambleLength.Bits32,
+            PreamblePattern = HdlcPreamblePattern.Ones,
             Loopback = true,
         };
         WindowsMicroGateDeviceOpener opener = new(native.Object);
@@ -96,7 +96,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     {
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
-        opener.Open("COM1", new MicroGatePeerOptions());
+        opener.Open("COM1", new HdlcPeerOptions());
 
         native.Verify(
             x => x.SetParams(
@@ -119,7 +119,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
     {
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
-        opener.Open("COM1", new MicroGatePeerOptions());
+        opener.Open("COM1", new HdlcPeerOptions());
 
         native.Verify(x => x.SetOption(9, 6u, 1u), Times.Once);
         native.Verify(x => x.SetOption(9, 8u, 1u), Times.Once);
@@ -131,7 +131,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
         native.Setup(x => x.SetOption(9, It.IsAny<uint>(), It.IsAny<uint>())).Returns(5u);
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
-        IMicroGateDevice device = opener.Open("COM1", new MicroGatePeerOptions());
+        IMicroGateDevice device = opener.Open("COM1", new HdlcPeerOptions());
         device.Dispose();
 
         native.Verify(x => x.SetParams(9, It.IsAny<MghdlcParams>()), Times.Once);
@@ -145,7 +145,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
         native.Setup(x => x.SetParams(9, It.IsAny<MghdlcParams>())).Throws<InvalidOperationException>();
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
-        Assert.Throws<InvalidOperationException>(() => opener.Open("COM1", new MicroGatePeerOptions()));
+        Assert.Throws<InvalidOperationException>(() => opener.Open("COM1", new HdlcPeerOptions()));
 
         native.Verify(x => x.Close(9), Times.Once);
     }
@@ -171,7 +171,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
 
         WindowsMicroGateDeviceOpener opener = new(native.Object);
 
-        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM1", new MicroGatePeerOptions()));
+        IOException exception = Assert.Throws<IOException>(() => opener.Open("COM1", new HdlcPeerOptions()));
 
         Assert.Contains(step, exception.Message);
         native.Verify(x => x.Close(9), Times.Once);

@@ -2,11 +2,11 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class LoopbackPeerTests : IAsyncLifetime
 {
-    private readonly MicroGatePeerOptions requesting = new() { RetryInterval = TimeSpan.FromMilliseconds(200) };
-    private readonly MicroGatePeerOptions passive = new() { RetryInterval = null };
+    private readonly HdlcPeerOptions requesting = new() { RetryInterval = TimeSpan.FromMilliseconds(200) };
+    private readonly HdlcPeerOptions passive = new() { RetryInterval = null };
     private readonly TimeSpan timeout = TimeSpan.FromSeconds(10);
-    private MicroGatePeer first = null!;
-    private MicroGatePeer second = null!;
+    private HdlcPeer first = null!;
+    private HdlcPeer second = null!;
 
     public async Task InitializeAsync()
     {
@@ -34,9 +34,9 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     public async Task Start_BothSidesSendRequests_BothSidesConnect()
     {
         (SocketMicroGateDevice firstDevice, SocketMicroGateDevice secondDevice) = await SocketMicroGateDevice.CreatePair();
-        await using MicroGatePeer left = Create(firstDevice);
-        await using MicroGatePeer right = Create(secondDevice);
-        MicroGatePeerOptions fast = requesting with { RetryInterval = TimeSpan.FromMilliseconds(20) };
+        await using HdlcPeer left = Create(firstDevice);
+        await using HdlcPeer right = Create(secondDevice);
+        HdlcPeerOptions fast = requesting with { RetryInterval = TimeSpan.FromMilliseconds(20) };
 
         await Task.WhenAll(left.StartAndConnect("left", 0x01, 0x03, fast).AsTask(), right.StartAndConnect("right", 0x03, 0x01, fast).AsTask()).WaitAsync(timeout);
 
@@ -80,9 +80,9 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     public async Task Send_LargePayload_ArrivesIntact()
     {
         (SocketMicroGateDevice firstSocket, SocketMicroGateDevice secondSocket) = await SocketMicroGateDevice.CreatePair();
-        await using MicroGatePeer large = Create(firstSocket);
-        await using MicroGatePeer largeSecond = Create(secondSocket);
-        MicroGatePeerOptions withMaxInfoField = requesting with { MaxInfoField = 4090 };
+        await using HdlcPeer large = Create(firstSocket);
+        await using HdlcPeer largeSecond = Create(secondSocket);
+        HdlcPeerOptions withMaxInfoField = requesting with { MaxInfoField = 4090 };
         PayloadObserver atSecond = new();
         largeSecond.Receiver = atSecond.Receive;
         Task listening = largeSecond.StartAndConnect("second", 0x03, 0x01, passive with { MaxInfoField = 4090 }).AsTask();
@@ -119,14 +119,14 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     [Fact]
     public async Task Dispose_RemotePeerDisconnectsAndCompletesTheStateStream()
     {
-        TestObserver<MicroGatePeerState> states = new();
+        TestObserver<HdlcPeerState> states = new();
         second.StateChanged.Subscribe(states);
         await ConnectBoth();
 
         await first.DisposeAsync();
 
         await states.Completed.WaitAsync(timeout);
-        Assert.Equal([MicroGatePeerState.Ready, MicroGatePeerState.Connecting, MicroGatePeerState.Connected, MicroGatePeerState.Disconnected], states.Seen);
+        Assert.Equal([HdlcPeerState.Ready, HdlcPeerState.Connecting, HdlcPeerState.Connected, HdlcPeerState.Disconnected], states.Seen);
     }
 
     [Fact]
@@ -138,11 +138,11 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
         await Assert.ThrowsAnyAsync<Exception>(async () => await first.Send(new byte[] { 1 }));
     }
 
-    private MicroGatePeer Create(IMicroGateDevice device)
+    private HdlcPeer Create(IMicroGateDevice device)
     {
         Mock<IMicroGateDeviceOpener> opener = new();
-        opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>())).Returns(device);
-        return new MicroGatePeer(opener.Object, opener.Object);
+        opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<HdlcPeerOptions>())).Returns(device);
+        return new HdlcPeer(opener.Object, opener.Object);
     }
 
     private async Task ConnectBoth()
@@ -156,9 +156,9 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     public async Task Send_WhenInformationFramesAreLostOnTheLine_StillArrivesCompleteAndInOrder()
     {
         (SocketMicroGateDevice firstSocket, SocketMicroGateDevice secondSocket) = await SocketMicroGateDevice.CreatePair();
-        await using MicroGatePeer lossy = Create(new DroppingMicroGateDevice(firstSocket, (_, index) => index is 3 or 4 or 10 or 25));
-        await using MicroGatePeer healthy = Create(secondSocket);
-        MicroGatePeerOptions quick = requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) };
+        await using HdlcPeer lossy = Create(new DroppingMicroGateDevice(firstSocket, (_, index) => index is 3 or 4 or 10 or 25));
+        await using HdlcPeer healthy = Create(secondSocket);
+        HdlcPeerOptions quick = requesting with { RetransmitInterval = TimeSpan.FromMilliseconds(100) };
         PayloadObserver atHealthy = new();
         healthy.Receiver = atHealthy.Receive;
         Task listening = healthy.StartAndConnect("healthy", 0x03, 0x01, passive with { RetransmitInterval = TimeSpan.FromMilliseconds(100) }).AsTask();
@@ -177,8 +177,8 @@ public sealed class LoopbackPeerTests : IAsyncLifetime
     public async Task Send_WhenTheLastFrameIsLost_IsRecoveredByTheRetransmitTimer()
     {
         (SocketMicroGateDevice firstSocket, SocketMicroGateDevice secondSocket) = await SocketMicroGateDevice.CreatePair();
-        await using MicroGatePeer lossy = Create(new DroppingMicroGateDevice(firstSocket, (_, index) => index == 1));
-        await using MicroGatePeer healthy = Create(secondSocket);
+        await using HdlcPeer lossy = Create(new DroppingMicroGateDevice(firstSocket, (_, index) => index == 1));
+        await using HdlcPeer healthy = Create(secondSocket);
         PayloadObserver atHealthy = new();
         healthy.Receiver = atHealthy.Receive;
         Task listening = healthy.StartAndConnect("healthy", 0x03, 0x01, passive).AsTask();

@@ -1,6 +1,6 @@
 # Usage
 
-Runnable examples of `MicroGatePortSource` and `MicroGatePeer` in different situations. `Monitored` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
+Runnable examples of `MicroGatePortSource` and `HdlcPeer` in different situations. `Monitored` and `StateChanged` are `IObservable<T>`; the library references System.Reactive, so `Subscribe` accepts a lambda directly.
 
 ## List the available ports
 
@@ -22,7 +22,7 @@ On Linux these are `ttySLG*` (PCI/PCIe) and MicroGate `ttyUSB*` devices; on Wind
 ```csharp
 using BlueHeighliner.MicroGate;
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 await peer.Start("ttySLG0");
 await peer.Connect(address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());
@@ -36,7 +36,7 @@ await peer.Send("Hello"u8.ToArray());
 using System.Text;
 using BlueHeighliner.MicroGate;
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 
 peer.StateChanged.Subscribe(state => Console.WriteLine($"State: {state}"));
 peer.Exceptions.Subscribe(exception => Console.WriteLine($"Error: {exception.Message}"));
@@ -59,9 +59,9 @@ Setting the receiver and subscribing first means no state change and no early fr
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { RetryInterval = null };
+HdlcPeerOptions options = new() { RetryInterval = null };
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 
 using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
 await peer.Start("ttySLG0", options, timeout.Token);
@@ -75,9 +75,9 @@ With a `null` retry interval this side never sends a connection request and comp
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { RetryInterval = TimeSpan.FromMilliseconds(250) };
+HdlcPeerOptions options = new() { RetryInterval = TimeSpan.FromMilliseconds(250) };
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 await peer.Start("ttySLG0", options);
 await peer.Connect(0x01, 0x03);
 ```
@@ -87,9 +87,9 @@ await peer.Connect(0x01, 0x03);
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { RetransmitInterval = TimeSpan.FromMilliseconds(250) };
+HdlcPeerOptions options = new() { RetransmitInterval = TimeSpan.FromMilliseconds(250) };
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 await peer.Start("ttySLG0", options);
 await peer.Connect(0x01, 0x03);
 
@@ -114,9 +114,9 @@ peer.StateChanged.Subscribe(
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { DisablePollFinalBit = true };
+HdlcPeerOptions options = new() { DisablePollFinalBit = true };
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 await peer.Start("ttySLG0", options);
 await peer.Connect(0x01, 0x03);
 ```
@@ -128,17 +128,17 @@ The poll/final bit is used by default only where the procedures need it: a poll 
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new()
+HdlcPeerOptions options = new()
 {
     Link = new()
     {
-        Encoding = MicroGateEncoding.NrziSpace,
-        Crc = MicroGateCrc.Crc16Ccitt,
+        Encoding = HdlcEncoding.NrziSpace,
+        Crc = HdlcCrc.Crc16Ccitt,
     },
-    IdlePattern = MicroGateIdlePattern.Flags,
+    IdlePattern = HdlcIdlePattern.Flags,
 };
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 await peer.Start("ttySLG0", options);
 await peer.Connect(0x01, 0x03);
 ```
@@ -153,21 +153,21 @@ using Microsoft.Extensions.DependencyInjection;
 
 ServiceCollection services = new();
 services.AddSingleton<IMicroGatePortSource, MicroGatePortSource>();
-services.AddSingleton<IMicroGatePeerFactory, MicroGatePeerFactory>();
+services.AddSingleton<IHdlcPeerFactory, HdlcPeerFactory>();
 ```
 
-A peer can be started only once, so a service that needs links takes the `IMicroGatePeerFactory` and calls `Create` for each one, disposing each peer when done. Registering `IMicroGatePeer` itself is possible, but only as transient, and a container then tracks every peer it resolves until the container is disposed.
+A peer can be started only once, so a service that needs links takes the `IHdlcPeerFactory` and calls `Create` for each one, disposing each peer when done. Registering `IHdlcPeer` itself is possible, but only as transient, and a container then tracks every peer it resolves until the container is disposed.
 
 ## Monitor a device without joining its connection
 
 ```csharp
 using BlueHeighliner.MicroGate;
 
-await using IMicroGatePeer peer = new MicroGatePeerFactory().Create();
+await using IHdlcPeer peer = new HdlcPeerFactory().Create();
 
 peer.Monitored.Subscribe(frame => Console.WriteLine($"{frame.Kind} from 0x{frame.Address:X2}, {frame.Raw.Length} bytes"));
 
-await peer.Start("ttySLG0", new MicroGatePeerOptions { EnableMonitor = true });
+await peer.Start("ttySLG0", new HdlcPeerOptions { EnableMonitor = true });
 ```
 
 A peer that is only started, and never connected, forms no HDLC connection and sends nothing: its transmitter stays disabled. With `EnableMonitor` it reports every frame it receives on `Monitored`, including the SABM, UA, DISC, DM, FRMR, RR, and RNR frames two other stations use to manage their own connection, not just their information frames. Without it, received frames are not even parsed. Only the physical layer settings matter for a monitor (`Link`: `Encoding`, `Crc`, `ReceiveClockSource`, `PhaseLockedLoopDivisor`, `ClockSpeed`); the HDLC-layer settings only apply once `Connect` is called.
@@ -177,7 +177,7 @@ A peer that is only started, and never connected, forms no HDLC connection and s
 ```csharp
 peer.Monitored.Subscribe(frame =>
 {
-    if (frame.Kind == MicroGateFrameKind.Malformed)
+    if (frame.Kind == HdlcFrameKind.Malformed)
     {
         Console.WriteLine($"Could not decode {frame.Raw.Length} bytes: {frame.ErrorMessage}");
         return;
@@ -194,9 +194,9 @@ A frame that is too short, or whose control byte does not match a recognized kin
 ```csharp
 using BlueHeighliner.MicroGate;
 
-MicroGatePeerOptions options = new() { EnableMonitor = true };
-await using IMicroGatePeer first = new MicroGatePeerFactory().Create();
-await using IMicroGatePeer second = new MicroGatePeerFactory().Create();
+HdlcPeerOptions options = new() { EnableMonitor = true };
+await using IHdlcPeer first = new HdlcPeerFactory().Create();
+await using IHdlcPeer second = new HdlcPeerFactory().Create();
 
 first.Monitored.Subscribe(frame => second.Forward(frame.Raw));
 second.Monitored.Subscribe(frame => first.Forward(frame.Raw));
@@ -206,3 +206,23 @@ await second.Start("ttyUSB1", options);
 ```
 
 Each started peer forwards what the other receives, so two stations on either side of the relay talk as if it were not there, while the relay still sees every frame. A real relay should queue the frames and forward them from its own task rather than from the observer, which runs on the thread reading the device. `Forward` is only allowed while the peer has not been connected.
+
+## Talk over an asynchronous serial line
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+await using IUartPeer peer = new UartPeerFactory().Create();
+peer.Receiver = data =>
+{
+    using (data)
+    {
+        Console.WriteLine(Convert.ToHexString(data.Memory.Span));
+    }
+};
+await peer.Start("ttyUSB0", new UartPeerOptions { BaudRate = 19200, DataBits = 7, Parity = UartParity.Even });
+await peer.Send("Hello\r\n"u8.ToArray());
+```
+
+The remote station must use the same baud rate, data bits, stop bits and parity. The bytes are sent and received exactly as given, with no framing.
+

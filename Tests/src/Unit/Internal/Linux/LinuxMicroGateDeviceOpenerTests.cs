@@ -15,7 +15,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
         native.Setup(x => x.Open(expectedPath)).Returns(-1);
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
-        IOException exception = Assert.Throws<IOException>(() => opener.Open(portName, new MicroGatePeerOptions()));
+        IOException exception = Assert.Throws<IOException>(() => opener.Open(portName, new HdlcPeerOptions()));
 
         Assert.Contains(expectedPath, exception.Message);
     }
@@ -23,21 +23,21 @@ public sealed class LinuxMicroGateDeviceOpenerTests
     [Fact]
     public void Open_ConfiguresPortFromOptionsAndReturnsDevice()
     {
-        MicroGatePeerOptions options = new()
+        HdlcPeerOptions options = new()
         {
             Link = new()
             {
-                Encoding = MicroGateEncoding.NrziSpace,
-                Crc = MicroGateCrc.Crc32Ccitt,
-                ReceiveClockSource = MicroGateReceiveClockSource.BaudRateGenerator,
-                TransmitClockSource = MicroGateTransmitClockSource.PhaseLockedLoop,
-                PhaseLockedLoopDivisor = MicroGatePhaseLockedLoopDivisor.DivideBy16,
+                Encoding = HdlcEncoding.NrziSpace,
+                Crc = HdlcCrc.Crc32Ccitt,
+                ReceiveClockSource = HdlcReceiveClockSource.BaudRateGenerator,
+                TransmitClockSource = HdlcTransmitClockSource.PhaseLockedLoop,
+                PhaseLockedLoopDivisor = HdlcPhaseLockedLoopDivisor.DivideBy16,
                 ClockSpeed = 9600,
             },
-            IdlePattern = MicroGateIdlePattern.Ones,
-            UnderrunAction = MicroGateUnderrunAction.Flag,
-            PreambleLength = MicroGatePreambleLength.Bits32,
-            PreamblePattern = MicroGatePreamblePattern.Ones,
+            IdlePattern = HdlcIdlePattern.Ones,
+            UnderrunAction = HdlcUnderrunAction.Flag,
+            PreambleLength = HdlcPreambleLength.Bits32,
+            PreamblePattern = HdlcPreamblePattern.Ones,
             Loopback = true,
         };
         LinuxMicroGateDeviceOpener opener = new(native.Object);
@@ -73,7 +73,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
     {
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
-        opener.Open("ttySLG0", new MicroGatePeerOptions());
+        opener.Open("ttySLG0", new HdlcPeerOptions());
 
         native.Verify(
             x => x.SetParams(
@@ -96,7 +96,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
     {
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
-        opener.Open("ttySLG0", new MicroGatePeerOptions());
+        opener.Open("ttySLG0", new HdlcPeerOptions());
 
         native.Verify(x => x.SetInterface(7, 1), Times.Once);
     }
@@ -107,7 +107,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
         native.Setup(x => x.SetInterface(7, It.IsAny<int>())).Returns(-1);
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
-        IMicroGateDevice device = opener.Open("ttySLG0", new MicroGatePeerOptions());
+        IMicroGateDevice device = opener.Open("ttySLG0", new HdlcPeerOptions());
         device.Dispose();
 
         native.Verify(x => x.SetParams(7, It.IsAny<SynclinkParams>()), Times.Once);
@@ -121,7 +121,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
         native.Setup(x => x.SetParams(7, It.IsAny<SynclinkParams>())).Throws<InvalidOperationException>();
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
-        Assert.Throws<InvalidOperationException>(() => opener.Open("ttySLG0", new MicroGatePeerOptions()));
+        Assert.Throws<InvalidOperationException>(() => opener.Open("ttySLG0", new HdlcPeerOptions()));
 
         native.Verify(x => x.Close(7), Times.Once);
     }
@@ -155,7 +155,7 @@ public sealed class LinuxMicroGateDeviceOpenerTests
 
         LinuxMicroGateDeviceOpener opener = new(native.Object);
 
-        IOException exception = Assert.Throws<IOException>(() => opener.Open("ttySLG0", new MicroGatePeerOptions()));
+        IOException exception = Assert.Throws<IOException>(() => opener.Open("ttySLG0", new HdlcPeerOptions()));
 
         Assert.Contains(step, exception.Message);
         Assert.Contains("/dev/ttySLG0", exception.Message);

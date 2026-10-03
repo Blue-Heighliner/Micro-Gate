@@ -13,7 +13,7 @@ internal sealed partial class MainWindow : Window
     /// <param name="describer">The describer of the frames shown in monitor and passthrough mode.</param>
     /// <param name="serializer">The serializer that saves and loads the log.</param>
     /// <param name="startup">What the command line asked for, such as the mode to open in.</param>
-    public MainWindow(IMicroGatePortSource portSource, IMicroGatePeerFactory peerFactory, IFrameDescriber describer, ILogSerializer serializer, StartupOptions startup)
+    public MainWindow(IMicroGatePortSource portSource, IHdlcPeerFactory peerFactory, IFrameDescriber describer, ILogSerializer serializer, StartupOptions startup)
     {
         this.portSource = portSource;
         this.peerFactory = peerFactory;
@@ -30,7 +30,7 @@ internal sealed partial class MainWindow : Window
         InputModeComboBox.ItemsSource = new[] { "ASCII", "Raw values" };
         InputModeComboBox.SelectedIndex = 0;
         SendGrid.Cells = [];
-        SendGrid.MaxCells = new MicroGatePeerOptions().MaxInfoField;
+        SendGrid.MaxCells = new HdlcPeerOptions().MaxInfoField;
         SendGrid.Edited += (_, _) => UpdateSendCount();
         SendGrid.SubmitRequested += async (_, _) => await Send();
         LogViewComboBox.Fill(LogView.Frames);
@@ -47,7 +47,7 @@ internal sealed partial class MainWindow : Window
         Loaded += async (_, _) => await RefreshPorts();
         Closed += (_, _) =>
         {
-            foreach (IMicroGatePeer open in peers)
+            foreach (IHdlcPeer open in peers)
             {
                 open.Dispose();
             }
@@ -55,10 +55,10 @@ internal sealed partial class MainWindow : Window
     }
 
     private readonly IMicroGatePortSource portSource;
-    private readonly IMicroGatePeerFactory peerFactory;
+    private readonly IHdlcPeerFactory peerFactory;
     private readonly IFrameDescriber describer;
     private readonly ILogSerializer serializer;
-    private readonly List<IMicroGatePeer> peers = [];
+    private readonly List<IHdlcPeer> peers = [];
     private readonly List<Channel<byte[]>> relays = [];
     private readonly List<LogEntry> log = [];
     private readonly ObservableCollection<LogEntry> shown = [];
@@ -150,7 +150,7 @@ internal sealed partial class MainWindow : Window
         UpdateState();
     }
 
-    private async Task ConnectPeer(string portName, MicroGatePeerOptions options)
+    private async Task ConnectPeer(string portName, HdlcPeerOptions options)
     {
         if (!byte.TryParse(AddressTextBox.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out byte address)
             || !byte.TryParse(RemoteAddressTextBox.Text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out byte remoteAddress))
@@ -165,7 +165,7 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        IMicroGatePeer newPeer = Open(portName, string.Empty);
+        IHdlcPeer newPeer = Open(portName, string.Empty);
         newPeer.Receiver = OnReceived;
         subscriptions.Add(newPeer.Monitored.Subscribe(frame => OnFrame(frame, "Receive", true)));
         subscriptions.Add(newPeer.Transmitted.Subscribe(frame => OnFrame(frame, "Transmit", false)));
@@ -189,9 +189,9 @@ internal sealed partial class MainWindow : Window
         }
     }
 
-    private async Task ConnectMonitor(string portName, MicroGatePeerOptions options)
+    private async Task ConnectMonitor(string portName, HdlcPeerOptions options)
     {
-        IMicroGatePeer newPeer = Open(portName, string.Empty);
+        IHdlcPeer newPeer = Open(portName, string.Empty);
         subscriptions.Add(newPeer.Monitored.Subscribe(frame => OnFrame(frame, "Receive", true)));
         AppendMessage($"Monitoring {portName}...");
 
@@ -201,7 +201,7 @@ internal sealed partial class MainWindow : Window
         }
     }
 
-    private async Task ConnectPassthrough(string portName, MicroGatePeerOptions options)
+    private async Task ConnectPassthrough(string portName, HdlcPeerOptions options)
     {
         if (PortBComboBox.SelectedItem is not string portNameB || portNameB == portName)
         {
@@ -209,8 +209,8 @@ internal sealed partial class MainWindow : Window
             return;
         }
 
-        IMicroGatePeer first = Open(portName, $"{portName}: ");
-        IMicroGatePeer second = Open(portNameB, $"{portNameB}: ");
+        IHdlcPeer first = Open(portName, $"{portName}: ");
+        IHdlcPeer second = Open(portNameB, $"{portNameB}: ");
         Channel<byte[]> firstToSecond = Channel.CreateUnbounded<byte[]>();
         Channel<byte[]> secondToFirst = Channel.CreateUnbounded<byte[]>();
         relays.Add(firstToSecond);
@@ -227,7 +227,7 @@ internal sealed partial class MainWindow : Window
         }
     }
 
-    private async Task<bool> StartAll(IReadOnlyList<(IMicroGatePeer Peer, string PortName)> targets, MicroGatePeerOptions options)
+    private async Task<bool> StartAll(IReadOnlyList<(IHdlcPeer Peer, string PortName)> targets, HdlcPeerOptions options)
     {
         UpdateState();
         try
@@ -247,9 +247,9 @@ internal sealed partial class MainWindow : Window
         }
     }
 
-    private IMicroGatePeer Open(string portName, string label)
+    private IHdlcPeer Open(string portName, string label)
     {
-        IMicroGatePeer opened = peerFactory.Create();
+        IHdlcPeer opened = peerFactory.Create();
         peers.Add(opened);
         connectCancellation ??= new CancellationTokenSource();
         PortStatusText.Text = string.Join(", ", peers.Count == 1 ? [portName] : [PortStatusText.Text, portName]);
@@ -260,7 +260,7 @@ internal sealed partial class MainWindow : Window
 
     private async Task Release()
     {
-        IMicroGatePeer[] released = [.. peers];
+        IHdlcPeer[] released = [.. peers];
         peers.Clear();
         connectCancellation?.Cancel();
         connectCancellation = null;
@@ -280,7 +280,7 @@ internal sealed partial class MainWindow : Window
         await Task.WhenAll(released.Select(released => released.DisposeAsync().AsTask()));
     }
 
-    private async Task Relay(ChannelReader<byte[]> reader, IMicroGatePeer target, string direction)
+    private async Task Relay(ChannelReader<byte[]> reader, IHdlcPeer target, string direction)
     {
         try
         {
@@ -311,9 +311,9 @@ internal sealed partial class MainWindow : Window
         });
     }
 
-    private void OnFrame(MicroGateFrame frame, string direction, bool isFirst)
+    private void OnFrame(HdlcFrame frame, string direction, bool isFirst)
     {
-        byte[] data = (frame.Kind == MicroGateFrameKind.Malformed ? frame.Raw : frame.Payload).ToArray();
+        byte[] data = (frame.Kind == HdlcFrameKind.Malformed ? frame.Raw : frame.Payload).ToArray();
         string text = $"{frame.Timestamp:HH:mm:ss.fff}  {direction}  {describer.Describe(frame)}";
         IReadOnlyList<LogField> fields = describer.Details(frame);
         Dispatcher.UIThread.Post(() =>
@@ -328,7 +328,7 @@ internal sealed partial class MainWindow : Window
             }
 
             AppendEntry(new LogEntry(text, data, fields));
-            if (mode != ControllerMode.Peer && frame.Kind == MicroGateFrameKind.Information && !frame.Payload.IsEmpty)
+            if (mode != ControllerMode.Peer && frame.Kind == HdlcFrameKind.Information && !frame.Payload.IsEmpty)
             {
                 if (isFirst)
                 {
@@ -346,16 +346,16 @@ internal sealed partial class MainWindow : Window
         });
     }
 
-    private void OnRelayed(MicroGateFrame frame, string direction, bool isFirst, Channel<byte[]> relay)
+    private void OnRelayed(HdlcFrame frame, string direction, bool isFirst, Channel<byte[]> relay)
     {
         relay.Writer.TryWrite(frame.Raw.ToArray());
         OnFrame(frame, direction, isFirst);
     }
 
-    private void OnStateChanged(IMicroGatePeer source, MicroGatePeerState state) =>
+    private void OnStateChanged(IHdlcPeer source, HdlcPeerState state) =>
         Dispatcher.UIThread.Post(async () =>
         {
-            if (state == MicroGatePeerState.Disconnected && peers.Contains(source))
+            if (state == HdlcPeerState.Disconnected && peers.Contains(source))
             {
                 await Release();
                 AppendMessage("Connection lost.");
@@ -381,7 +381,7 @@ internal sealed partial class MainWindow : Window
     private void UpdateState()
     {
         bool active = peers.Count > 0;
-        MicroGatePeerState state = active ? peers.Min(open => open.State) : MicroGatePeerState.Idle;
+        HdlcPeerState state = active ? peers.Min(open => open.State) : HdlcPeerState.Idle;
         ModeComboBox.IsEnabled = !active;
         ConnectButton.Content = (mode, active) switch
         {
@@ -390,8 +390,8 @@ internal sealed partial class MainWindow : Window
             (_, false) => "Start",
             _ => "Stop",
         };
-        SendButton.IsEnabled = mode == ControllerMode.Peer && state == MicroGatePeerState.Connected;
-        StatusText.Text = state == MicroGatePeerState.Ready ? (mode == ControllerMode.Monitor ? "Monitoring" : "Passing through") : state.ToString();
+        SendButton.IsEnabled = mode == ControllerMode.Peer && state == HdlcPeerState.Connected;
+        StatusText.Text = state == HdlcPeerState.Ready ? (mode == ControllerMode.Monitor ? "Monitoring" : "Passing through") : state.ToString();
     }
 
     private void UpdateCounts()
@@ -409,7 +409,7 @@ internal sealed partial class MainWindow : Window
         };
     }
 
-    private MicroGatePeerOptions? BuildOptions()
+    private HdlcPeerOptions? BuildOptions()
     {
         if (LinkOptions.Build(mode, out string problem) is { } built)
         {
@@ -487,7 +487,7 @@ internal sealed partial class MainWindow : Window
 
     private async Task Send()
     {
-        if (peers.Count != 1 || peers[0] is not { State: MicroGatePeerState.Connected } connected)
+        if (peers.Count != 1 || peers[0] is not { State: HdlcPeerState.Connected } connected)
         {
             AppendMessage("Not connected.");
             return;

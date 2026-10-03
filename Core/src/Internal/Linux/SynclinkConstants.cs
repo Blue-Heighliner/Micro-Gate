@@ -17,6 +17,11 @@ internal static class SynclinkConstants
     private static readonly int magicNumber = 'm';
 
     /// <summary>
+    /// Selects asynchronous mode in <see cref="SynclinkParams.Mode"/>.
+    /// </summary>
+    public static readonly nuint ModeAsync = 1;
+
+    /// <summary>
     /// Selects HDLC synchronous mode in <see cref="SynclinkParams.Mode"/>.
     /// </summary>
     public static readonly nuint ModeHdlc = 2;
@@ -95,6 +100,11 @@ internal static class SynclinkConstants
     /// The <c>N_HDLC</c> tty line discipline number, selecting frame-oriented processing of the device.
     /// </summary>
     public static readonly int LineDisciplineHdlc = 13;
+
+    /// <summary>
+    /// The <c>N_TTY</c> line discipline, the byte oriented default used for every protocol except HDLC.
+    /// </summary>
+    public static readonly int LineDisciplineTty = 0;
 
     /// <summary>
     /// The <c>poll</c> event meaning data can be read.

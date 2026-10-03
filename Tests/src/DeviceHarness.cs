@@ -2,9 +2,9 @@ namespace BlueHeighliner.MicroGate;
 
 internal sealed class DeviceHarness : IDisposable
 {
-    public DeviceHarness(MicroGatePeerOptions? options = null)
+    public DeviceHarness(HdlcPeerOptions? options = null)
     {
-        Options = options ?? new MicroGatePeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.Zero };
+        Options = options ?? new HdlcPeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.Zero };
 
         Device
             .Setup(x => x.Read(It.IsAny<byte[]>()))
@@ -25,7 +25,7 @@ internal sealed class DeviceHarness : IDisposable
             .Setup(x => x.Write(It.IsAny<ReadOnlyMemory<byte>>()))
             .Callback(Record);
         Device.Setup(x => x.DisableReceiver()).Callback(closed.Cancel);
-        Opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>())).Returns(Device.Object);
+        Opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<HdlcPeerOptions>())).Returns(Device.Object);
     }
 
     private readonly BlockingCollection<byte[]> inbound = [];
@@ -37,7 +37,7 @@ internal sealed class DeviceHarness : IDisposable
 
     public byte RemoteAddress { get; } = 0x22;
 
-    public MicroGatePeerOptions Options { get; }
+    public HdlcPeerOptions Options { get; }
 
     public Mock<IMicroGateDevice> Device { get; } = new();
 
@@ -54,10 +54,10 @@ internal sealed class DeviceHarness : IDisposable
         }
     }
 
-    public HdlcFrame Peer(HdlcFrameKind kind, bool pollFinal = true, int sendSequence = 0, ReadOnlyMemory<byte> payload = default, int receiveSequence = 0) =>
+    public HdlcWireFrame Peer(HdlcWireFrameKind kind, bool pollFinal = true, int sendSequence = 0, ReadOnlyMemory<byte> payload = default, int receiveSequence = 0) =>
         new()
         {
-            Address = kind is HdlcFrameKind.Information or HdlcFrameKind.SetAsynchronousBalancedMode or HdlcFrameKind.Disconnect ? Address : RemoteAddress,
+            Address = kind is HdlcWireFrameKind.Information or HdlcWireFrameKind.SetAsynchronousBalancedMode or HdlcWireFrameKind.Disconnect ? Address : RemoteAddress,
             Kind = kind,
             PollFinal = pollFinal,
             SendSequence = sendSequence,
@@ -75,39 +75,39 @@ internal sealed class DeviceHarness : IDisposable
         writtenSignal.Release();
     }
 
-    public void Receive(HdlcFrame frame) => inbound.Add(frame.ToArray());
+    public void Receive(HdlcWireFrame frame) => inbound.Add(frame.ToArray());
 
     public void Receive(byte[] raw) => inbound.Add(raw);
 
     public void EndOfInput() => closed.Cancel();
 
-    public async Task<HdlcFrame> NextWritten(int index)
+    public async Task<HdlcWireFrame> NextWritten(int index)
     {
         while (Written.Count <= index)
         {
             await writtenSignal.WaitAsync(TimeSpan.FromSeconds(5));
         }
 
-        return HdlcFrame.Parse(Written[index]);
+        return HdlcWireFrame.Parse(Written[index]);
     }
 
-    public MicroGatePeer CreatePeer(TimeSpan? shutdownTimeout = null) => new(Opener.Object, Opener.Object, shutdownTimeout);
+    public HdlcPeer CreatePeer(TimeSpan? shutdownTimeout = null) => new(Opener.Object, Opener.Object, shutdownTimeout);
 
-    public async Task<MicroGatePeer> Connect()
+    public async Task<HdlcPeer> Connect()
     {
-        MicroGatePeer peer = CreatePeer();
+        HdlcPeer peer = CreatePeer();
         Task connecting = peer.StartAndConnect("port", Address, RemoteAddress, Options).AsTask();
         await NextWritten(0);
-        Receive(Peer(HdlcFrameKind.UnnumberedAcknowledge));
+        Receive(Peer(HdlcWireFrameKind.UnnumberedAcknowledge));
         await connecting.WaitAsync(TimeSpan.FromSeconds(5));
         return peer;
     }
 
-    public async Task<MicroGatePeer> Listen()
+    public async Task<HdlcPeer> Listen()
     {
-        MicroGatePeer peer = CreatePeer();
+        HdlcPeer peer = CreatePeer();
         Task listening = peer.StartAndConnect("port", Address, RemoteAddress, Options with { RetryInterval = null }).AsTask();
-        Receive(Peer(HdlcFrameKind.SetAsynchronousBalancedMode));
+        Receive(Peer(HdlcWireFrameKind.SetAsynchronousBalancedMode));
         await listening.WaitAsync(TimeSpan.FromSeconds(5));
         return peer;
     }

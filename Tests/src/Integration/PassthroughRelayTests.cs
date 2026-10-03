@@ -3,12 +3,12 @@ namespace BlueHeighliner.MicroGate;
 public sealed class PassthroughRelayTests : IAsyncLifetime
 {
     private readonly TimeSpan timeout = TimeSpan.FromSeconds(10);
-    private readonly MicroGatePeerOptions endpoint = new() { RetryInterval = TimeSpan.FromMilliseconds(200) };
-    private readonly MicroGatePeerOptions relay = new() { EnableMonitor = true };
-    private MicroGatePeer left = null!;
-    private MicroGatePeer right = null!;
-    private MicroGatePeer relayLeft = null!;
-    private MicroGatePeer relayRight = null!;
+    private readonly HdlcPeerOptions endpoint = new() { RetryInterval = TimeSpan.FromMilliseconds(200) };
+    private readonly HdlcPeerOptions relay = new() { EnableMonitor = true };
+    private HdlcPeer left = null!;
+    private HdlcPeer right = null!;
+    private HdlcPeer relayLeft = null!;
+    private HdlcPeer relayRight = null!;
 
     public async Task InitializeAsync()
     {
@@ -31,14 +31,14 @@ public sealed class PassthroughRelayTests : IAsyncLifetime
     [Fact]
     public async Task Relay_ForwardsFramesBothWaysSoTheEndpointsConnectAndExchangeDataAndTheRelayLogsThem()
     {
-        TestObserver<MicroGateFrame> fromLeft = new();
-        TestObserver<MicroGateFrame> fromRight = new();
-        relayLeft.Monitored.Subscribe(new CallbackObserver<MicroGateFrame>(frame =>
+        TestObserver<HdlcFrame> fromLeft = new();
+        TestObserver<HdlcFrame> fromRight = new();
+        relayLeft.Monitored.Subscribe(new CallbackObserver<HdlcFrame>(frame =>
         {
             fromLeft.OnNext(frame);
             relayRight.Forward(frame.Raw).AsTask().Wait(timeout);
         }));
-        relayRight.Monitored.Subscribe(new CallbackObserver<MicroGateFrame>(frame =>
+        relayRight.Monitored.Subscribe(new CallbackObserver<HdlcFrame>(frame =>
         {
             fromRight.OnNext(frame);
             relayLeft.Forward(frame.Raw).AsTask().Wait(timeout);
@@ -57,16 +57,16 @@ public sealed class PassthroughRelayTests : IAsyncLifetime
 
         Assert.Equal(new byte[] { 1, 2, 3 }, await atRight.Next());
         Assert.Equal(new byte[] { 9, 8 }, await atLeft.Next());
-        Assert.Contains(fromLeft.Seen, frame => frame.Kind == MicroGateFrameKind.Information && frame.Payload.Span.SequenceEqual(new byte[] { 1, 2, 3 }));
-        Assert.Contains(fromRight.Seen, frame => frame.Kind == MicroGateFrameKind.Information && frame.Payload.Span.SequenceEqual(new byte[] { 9, 8 }));
-        Assert.Contains(fromLeft.Seen, frame => frame.Kind == MicroGateFrameKind.SetAsynchronousBalancedMode);
-        Assert.Contains(fromRight.Seen, frame => frame.Kind == MicroGateFrameKind.UnnumberedAcknowledge);
+        Assert.Contains(fromLeft.Seen, frame => frame.Kind == HdlcFrameKind.Information && frame.Payload.Span.SequenceEqual(new byte[] { 1, 2, 3 }));
+        Assert.Contains(fromRight.Seen, frame => frame.Kind == HdlcFrameKind.Information && frame.Payload.Span.SequenceEqual(new byte[] { 9, 8 }));
+        Assert.Contains(fromLeft.Seen, frame => frame.Kind == HdlcFrameKind.SetAsynchronousBalancedMode);
+        Assert.Contains(fromRight.Seen, frame => frame.Kind == HdlcFrameKind.UnnumberedAcknowledge);
     }
 
-    private MicroGatePeer Create(IMicroGateDevice device)
+    private HdlcPeer Create(IMicroGateDevice device)
     {
         Mock<IMicroGateDeviceOpener> opener = new();
-        opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<MicroGatePeerOptions>())).Returns(device);
-        return new MicroGatePeer(opener.Object, opener.Object);
+        opener.Setup(x => x.Open(It.IsAny<string>(), It.IsAny<HdlcPeerOptions>())).Returns(device);
+        return new HdlcPeer(opener.Object, opener.Object);
     }
 }

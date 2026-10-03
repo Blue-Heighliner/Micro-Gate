@@ -2,7 +2,7 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class HdlcStateMachineReliabilityTests
 {
-    private readonly MicroGatePeerOptions options = new() { AcknowledgeDelay = TimeSpan.Zero };
+    private readonly HdlcPeerOptions options = new() { AcknowledgeDelay = TimeSpan.Zero };
 
     private (HdlcStateMachine Local, HdlcStateMachine Remote) EstablishConnectedPair()
     {
@@ -12,8 +12,8 @@ public sealed class HdlcStateMachineReliabilityTests
         return (local, remote);
     }
 
-    private byte[] Frame(HdlcFrameKind kind, int receiveSequence = 0, int sendSequence = 0, byte[]? payload = null) =>
-        new HdlcFrame { Address = kind is HdlcFrameKind.Information or HdlcFrameKind.SetAsynchronousBalancedMode or HdlcFrameKind.Disconnect ? (byte)0x11 : (byte)0x12, Kind = kind, PollFinal = false, ReceiveSequence = receiveSequence, SendSequence = sendSequence, Payload = payload ?? [] }.ToArray();
+    private byte[] Frame(HdlcWireFrameKind kind, int receiveSequence = 0, int sendSequence = 0, byte[]? payload = null) =>
+        new HdlcWireFrame { Address = kind is HdlcWireFrameKind.Information or HdlcWireFrameKind.SetAsynchronousBalancedMode or HdlcWireFrameKind.Disconnect ? (byte)0x11 : (byte)0x12, Kind = kind, PollFinal = false, ReceiveSequence = receiveSequence, SendSequence = sendSequence, Payload = payload ?? [] }.ToArray();
 
     [Fact]
     public void CreateInformation_KeepsFramesUntilWindowIsFull()
@@ -39,7 +39,7 @@ public sealed class HdlcStateMachineReliabilityTests
             local.CreateInformation(new byte[] { (byte)i });
         }
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 3));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.ReceiveReady, receiveSequence: 3));
 
         Assert.Equal(3, result.Acknowledged);
         Assert.Equal(1, local.OutstandingCount);
@@ -52,7 +52,7 @@ public sealed class HdlcStateMachineReliabilityTests
         (HdlcStateMachine local, _) = EstablishConnectedPair();
         local.CreateInformation(new byte[] { 1 });
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.ReceiveNotReady, receiveSequence: 1));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.ReceiveNotReady, receiveSequence: 1));
 
         Assert.Equal(1, result.Acknowledged);
         Assert.Equal(0, local.OutstandingCount);
@@ -65,7 +65,7 @@ public sealed class HdlcStateMachineReliabilityTests
         local.CreateInformation(new byte[] { 1 });
         local.CreateInformation(new byte[] { 2 });
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.Information, receiveSequence: 2, sendSequence: 0, payload: [7]));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.Information, receiveSequence: 2, sendSequence: 0, payload: [7]));
 
         Assert.Equal(2, result.Acknowledged);
         Assert.Equal(new byte[] { 7 }, result.Payload!.Value.ToArray());
@@ -77,7 +77,7 @@ public sealed class HdlcStateMachineReliabilityTests
         (HdlcStateMachine local, _) = EstablishConnectedPair();
         local.CreateInformation(new byte[] { 1 });
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 5));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.ReceiveReady, receiveSequence: 5));
 
         Assert.Equal(0, result.Acknowledged);
         Assert.Equal(1, local.OutstandingCount);
@@ -92,15 +92,15 @@ public sealed class HdlcStateMachineReliabilityTests
             local.CreateInformation(new byte[] { (byte)(10 + i) });
         }
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 1));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.Reject, receiveSequence: 1));
         IReadOnlyList<ReadOnlyMemory<byte>> frames = local.CreateRetransmission();
 
         Assert.Equal(1, result.Acknowledged);
         Assert.True(result.Retransmit);
         Assert.Equal(2, frames.Count);
-        HdlcFrame first = HdlcFrame.Parse(frames[0]);
-        HdlcFrame second = HdlcFrame.Parse(frames[1]);
-        Assert.Equal(HdlcFrameKind.Information, first.Kind);
+        HdlcWireFrame first = HdlcWireFrame.Parse(frames[0]);
+        HdlcWireFrame second = HdlcWireFrame.Parse(frames[1]);
+        Assert.Equal(HdlcWireFrameKind.Information, first.Kind);
         Assert.Equal(1, first.SendSequence);
         Assert.Equal(new byte[] { 11 }, first.Payload.ToArray());
         Assert.Equal(2, second.SendSequence);
@@ -113,7 +113,7 @@ public sealed class HdlcStateMachineReliabilityTests
     {
         (HdlcStateMachine local, _) = EstablishConnectedPair();
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 0));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.Reject, receiveSequence: 0));
 
         Assert.False(result.Retransmit);
     }
@@ -126,11 +126,11 @@ public sealed class HdlcStateMachineReliabilityTests
         local.CreateInformation(new byte[] { 2 });
 
         local.DiscardLastInformation();
-        HdlcFrame next = HdlcFrame.Parse(local.CreateInformation(new byte[] { 3 }));
+        HdlcWireFrame next = HdlcWireFrame.Parse(local.CreateInformation(new byte[] { 3 }));
 
         Assert.Equal(1, next.SendSequence);
         Assert.Equal(2, local.OutstandingCount);
-        Assert.Equal([new byte[] { 1 }, new byte[] { 3 }], local.CreateRetransmission().Select(frame => HdlcFrame.Parse(frame).Payload.ToArray()), new ByteArrayComparer());
+        Assert.Equal([new byte[] { 1 }, new byte[] { 3 }], local.CreateRetransmission().Select(frame => HdlcWireFrame.Parse(frame).Payload.ToArray()), new ByteArrayComparer());
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class HdlcStateMachineReliabilityTests
 
         local.DiscardLastInformation();
 
-        Assert.Equal(0, HdlcFrame.Parse(local.CreateInformation(new byte[] { 1 })).SendSequence);
+        Assert.Equal(0, HdlcWireFrame.Parse(local.CreateInformation(new byte[] { 1 })).SendSequence);
     }
 
     [Fact]
@@ -149,13 +149,13 @@ public sealed class HdlcStateMachineReliabilityTests
         (HdlcStateMachine local, _) = EstablishConnectedPair();
         local.CreateInformation(new byte[] { 1 });
         local.CreateInformation(new byte[] { 2 });
-        local.Receive(Frame(HdlcFrameKind.Information, receiveSequence: 0, sendSequence: 0, payload: [5]));
+        local.Receive(Frame(HdlcWireFrameKind.Information, receiveSequence: 0, sendSequence: 0, payload: [5]));
 
         IReadOnlyList<ReadOnlyMemory<byte>> frames = local.CreateRetransmission();
 
         Assert.Equal(2, frames.Count);
-        Assert.All(frames, frame => Assert.Equal(1, HdlcFrame.Parse(frame).ReceiveSequence));
-        Assert.Equal([0, 1], frames.Select(frame => HdlcFrame.Parse(frame).SendSequence));
+        Assert.All(frames, frame => Assert.Equal(1, HdlcWireFrame.Parse(frame).ReceiveSequence));
+        Assert.Equal([0, 1], frames.Select(frame => HdlcWireFrame.Parse(frame).SendSequence));
         Assert.Equal(2, local.OutstandingCount);
     }
 
@@ -172,19 +172,19 @@ public sealed class HdlcStateMachineReliabilityTests
     {
         (HdlcStateMachine local, _) = EstablishConnectedPair();
 
-        HdlcReceiveResult first = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 1, payload: [1]));
-        HdlcReceiveResult second = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 2, payload: [2]));
-        HdlcReceiveResult filled = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 0, payload: [0]));
-        HdlcReceiveResult again = local.Receive(Frame(HdlcFrameKind.Information, sendSequence: 5, payload: [5]));
+        HdlcReceiveResult first = local.Receive(Frame(HdlcWireFrameKind.Information, sendSequence: 1, payload: [1]));
+        HdlcReceiveResult second = local.Receive(Frame(HdlcWireFrameKind.Information, sendSequence: 2, payload: [2]));
+        HdlcReceiveResult filled = local.Receive(Frame(HdlcWireFrameKind.Information, sendSequence: 0, payload: [0]));
+        HdlcReceiveResult again = local.Receive(Frame(HdlcWireFrameKind.Information, sendSequence: 5, payload: [5]));
 
-        Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(first.Response!.Value).Kind);
+        Assert.Equal(HdlcWireFrameKind.Reject, HdlcWireFrame.Parse(first.Response!.Value).Kind);
         Assert.Null(first.Payload);
-        HdlcFrame secondAnswer = HdlcFrame.Parse(second.Response!.Value);
-        Assert.Equal(HdlcFrameKind.ReceiveReady, secondAnswer.Kind);
+        HdlcWireFrame secondAnswer = HdlcWireFrame.Parse(second.Response!.Value);
+        Assert.Equal(HdlcWireFrameKind.ReceiveReady, secondAnswer.Kind);
         Assert.Equal(0, secondAnswer.ReceiveSequence);
         Assert.Null(second.Payload);
         Assert.Equal(new byte[] { 0 }, filled.Payload!.Value.ToArray());
-        Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(again.Response!.Value).Kind);
+        Assert.Equal(HdlcWireFrameKind.Reject, HdlcWireFrame.Parse(again.Response!.Value).Kind);
     }
 
     [Fact]
@@ -194,18 +194,18 @@ public sealed class HdlcStateMachineReliabilityTests
         local.CreateInformation(new byte[] { 1 });
         local.CreateInformation(new byte[] { 2 });
         local.CreateInformation(new byte[] { 3 });
-        local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 1));
+        local.Receive(Frame(HdlcWireFrameKind.ReceiveReady, receiveSequence: 1));
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.SetAsynchronousBalancedMode));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.SetAsynchronousBalancedMode));
         IReadOnlyList<ReadOnlyMemory<byte>> frames = local.CreateRetransmission();
 
         Assert.Equal(0, result.Acknowledged);
         Assert.True(result.Retransmit);
-        Assert.Equal(HdlcFrameKind.UnnumberedAcknowledge, HdlcFrame.Parse(result.Response!.Value).Kind);
+        Assert.Equal(HdlcWireFrameKind.UnnumberedAcknowledge, HdlcWireFrame.Parse(result.Response!.Value).Kind);
         Assert.Equal(2, local.OutstandingCount);
-        Assert.Equal([0, 1], frames.Select(frame => HdlcFrame.Parse(frame).SendSequence));
-        Assert.Equal([new byte[] { 2 }, new byte[] { 3 }], frames.Select(frame => HdlcFrame.Parse(frame).Payload.ToArray()), new ByteArrayComparer());
-        Assert.Equal(2, HdlcFrame.Parse(local.CreateInformation(new byte[] { 4 })).SendSequence);
+        Assert.Equal([0, 1], frames.Select(frame => HdlcWireFrame.Parse(frame).SendSequence));
+        Assert.Equal([new byte[] { 2 }, new byte[] { 3 }], frames.Select(frame => HdlcWireFrame.Parse(frame).Payload.ToArray()), new ByteArrayComparer());
+        Assert.Equal(2, HdlcWireFrame.Parse(local.CreateInformation(new byte[] { 4 })).SendSequence);
     }
 
     [Fact]
@@ -213,9 +213,9 @@ public sealed class HdlcStateMachineReliabilityTests
     {
         (HdlcStateMachine local, _) = EstablishConnectedPair();
         local.CreateInformation(new byte[] { 1 });
-        local.Receive(Frame(HdlcFrameKind.DisconnectedMode));
+        local.Receive(Frame(HdlcWireFrameKind.DisconnectedMode));
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.SetAsynchronousBalancedMode));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.SetAsynchronousBalancedMode));
 
         Assert.Equal(1, result.Acknowledged);
         Assert.Equal(0, local.OutstandingCount);
@@ -239,7 +239,7 @@ public sealed class HdlcStateMachineReliabilityTests
 
         Assert.True(result.Retransmit);
         Assert.Equal(HdlcConnectionState.Connected, result.State);
-        Assert.Equal([0, 1], local.CreateRetransmission().Select(frame => HdlcFrame.Parse(frame).SendSequence));
+        Assert.Equal([0, 1], local.CreateRetransmission().Select(frame => HdlcWireFrame.Parse(frame).SendSequence));
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public sealed class HdlcStateMachineReliabilityTests
         (HdlcStateMachine local, _) = EstablishConnectedPair();
         local.CreateInformation(new byte[] { 1 });
 
-        HdlcReceiveResult result = local.Receive(Frame(HdlcFrameKind.UnnumberedAcknowledge));
+        HdlcReceiveResult result = local.Receive(Frame(HdlcWireFrameKind.UnnumberedAcknowledge));
 
         Assert.False(result.Retransmit);
         Assert.Equal(1, local.OutstandingCount);
@@ -270,7 +270,7 @@ public sealed class HdlcStateMachineReliabilityTests
     {
         HdlcStateMachine machine = new(options, 0x11, 0x12);
 
-        HdlcReceiveResult result = machine.Receive(Frame(HdlcFrameKind.Reject, receiveSequence: 1));
+        HdlcReceiveResult result = machine.Receive(Frame(HdlcWireFrameKind.Reject, receiveSequence: 1));
 
         Assert.Equal(HdlcConnectionState.Disconnected, result.State);
         Assert.Equal(0, result.Acknowledged);
@@ -308,7 +308,7 @@ public sealed class HdlcStateMachineReliabilityTests
         HdlcReceiveResult secondRepeat = remote.Receive(local.CreateRetransmission()[0]);
         HdlcReceiveResult acknowledged = local.Receive(secondRepeat.Response!.Value);
 
-        Assert.Equal(HdlcFrameKind.Reject, HdlcFrame.Parse(firstRepeat.Response!.Value).Kind);
+        Assert.Equal(HdlcWireFrameKind.Reject, HdlcWireFrame.Parse(firstRepeat.Response!.Value).Kind);
         Assert.Null(firstRepeat.Payload);
         Assert.Null(secondRepeat.Payload);
         Assert.Equal(1, acknowledged.Acknowledged);
@@ -336,11 +336,11 @@ public sealed class HdlcStateMachineReliabilityTests
         (HdlcStateMachine local, _) = EstablishConnectedPair();
         Mock<IMemoryOwner<byte>> owner = Owner(7, 8);
 
-        HdlcFrame frame = HdlcFrame.Parse(local.CreateInformation(owner.Object));
+        HdlcWireFrame frame = HdlcWireFrame.Parse(local.CreateInformation(owner.Object));
 
         Assert.Equal(new byte[] { 7, 8 }, frame.Payload.ToArray());
         owner.Verify(x => x.Dispose(), Times.Never);
-        local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 1));
+        local.Receive(Frame(HdlcWireFrameKind.ReceiveReady, receiveSequence: 1));
         owner.Verify(x => x.Dispose(), Times.Once);
         Assert.Equal(0, local.OutstandingCount);
     }
@@ -380,12 +380,12 @@ public sealed class HdlcStateMachineReliabilityTests
         Mock<IMemoryOwner<byte>> owner = Owner(3);
         local.CreateInformation(owner.Object);
 
-        local.Receive(Frame(HdlcFrameKind.SetAsynchronousBalancedMode));
+        local.Receive(Frame(HdlcWireFrameKind.SetAsynchronousBalancedMode));
 
         owner.Verify(x => x.Dispose(), Times.Never);
         Assert.Equal(1, local.OutstandingCount);
-        Assert.Equal(new byte[] { 3 }, HdlcFrame.Parse(local.CreateRetransmission()[0]).Payload.ToArray());
-        local.Receive(Frame(HdlcFrameKind.ReceiveReady, receiveSequence: 1));
+        Assert.Equal(new byte[] { 3 }, HdlcWireFrame.Parse(local.CreateRetransmission()[0]).Payload.ToArray());
+        local.Receive(Frame(HdlcWireFrameKind.ReceiveReady, receiveSequence: 1));
         owner.Verify(x => x.Dispose(), Times.Once);
     }
 

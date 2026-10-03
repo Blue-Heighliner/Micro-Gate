@@ -11,7 +11,7 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native, TimeSp
     private readonly TimeSpan busyRetryInterval = TimeSpan.FromMilliseconds(50);
 
     /// <inheritdoc />
-    public IMicroGateDevice Open(string portName, MicroGatePeerOptions options)
+    public IMicroGateDevice Open(string portName, HdlcPeerOptions options)
     {
         uint openStatus = OpenWhenReleased(portName, out nint handle);
         if (openStatus != MghdlcConstants.Success)
@@ -47,7 +47,7 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native, TimeSp
         return status;
     }
 
-    private void ConfigurePort(nint handle, MicroGatePeerOptions options)
+    private void ConfigurePort(nint handle, HdlcPeerOptions options)
     {
         // Both options are best effort: setting the interface can need privileges the user lacks, and a device that cannot switch is still usable as it is.
         native.SetOption(handle, MghdlcConstants.OptionInterface, MghdlcConstants.InterfaceRs232);
@@ -77,94 +77,94 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native, TimeSp
         }
     }
 
-    private ushort MapFlags(MicroGatePeerOptions options) =>
+    private ushort MapFlags(HdlcPeerOptions options) =>
         (ushort)(MapReceiveClockSource(options.Link.ReceiveClockSource) | MapTransmitClockSource(options.Link.TransmitClockSource) | MapPhaseLockedLoopDivisor(options.Link.PhaseLockedLoopDivisor) | MapUnderrunAction(options.UnderrunAction));
 
-    private ushort MapReceiveClockSource(MicroGateReceiveClockSource value) => value switch
+    private ushort MapReceiveClockSource(HdlcReceiveClockSource value) => value switch
     {
-        MicroGateReceiveClockSource.OwnPin => 0,
-        MicroGateReceiveClockSource.OtherPin => MghdlcConstants.ReceiveClockOtherPin,
-        MicroGateReceiveClockSource.PhaseLockedLoop => MghdlcConstants.ReceiveClockDpll,
-        MicroGateReceiveClockSource.BaudRateGenerator => MghdlcConstants.ReceiveClockBrg,
+        HdlcReceiveClockSource.OwnPin => 0,
+        HdlcReceiveClockSource.OtherPin => MghdlcConstants.ReceiveClockOtherPin,
+        HdlcReceiveClockSource.PhaseLockedLoop => MghdlcConstants.ReceiveClockDpll,
+        HdlcReceiveClockSource.BaudRateGenerator => MghdlcConstants.ReceiveClockBrg,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private ushort MapTransmitClockSource(MicroGateTransmitClockSource value) => value switch
+    private ushort MapTransmitClockSource(HdlcTransmitClockSource value) => value switch
     {
-        MicroGateTransmitClockSource.OwnPin => 0,
-        MicroGateTransmitClockSource.OtherPin => MghdlcConstants.TransmitClockOtherPin,
-        MicroGateTransmitClockSource.PhaseLockedLoop => MghdlcConstants.TransmitClockDpll,
-        MicroGateTransmitClockSource.BaudRateGenerator => MghdlcConstants.TransmitClockBrg,
+        HdlcTransmitClockSource.OwnPin => 0,
+        HdlcTransmitClockSource.OtherPin => MghdlcConstants.TransmitClockOtherPin,
+        HdlcTransmitClockSource.PhaseLockedLoop => MghdlcConstants.TransmitClockDpll,
+        HdlcTransmitClockSource.BaudRateGenerator => MghdlcConstants.TransmitClockBrg,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private ushort MapPhaseLockedLoopDivisor(MicroGatePhaseLockedLoopDivisor value) => value switch
+    private ushort MapPhaseLockedLoopDivisor(HdlcPhaseLockedLoopDivisor value) => value switch
     {
-        MicroGatePhaseLockedLoopDivisor.DivideBy32 => 0,
-        MicroGatePhaseLockedLoopDivisor.DivideBy8 => MghdlcConstants.DpllDivisor8,
-        MicroGatePhaseLockedLoopDivisor.DivideBy16 => MghdlcConstants.DpllDivisor16,
+        HdlcPhaseLockedLoopDivisor.DivideBy32 => 0,
+        HdlcPhaseLockedLoopDivisor.DivideBy8 => MghdlcConstants.DpllDivisor8,
+        HdlcPhaseLockedLoopDivisor.DivideBy16 => MghdlcConstants.DpllDivisor16,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private ushort MapUnderrunAction(MicroGateUnderrunAction value) => value switch
+    private ushort MapUnderrunAction(HdlcUnderrunAction value) => value switch
     {
-        MicroGateUnderrunAction.Abort7 => 0,
-        MicroGateUnderrunAction.Abort15 => MghdlcConstants.UnderrunAbort15,
-        MicroGateUnderrunAction.Flag => MghdlcConstants.UnderrunFlag,
-        MicroGateUnderrunAction.InvalidFrameCheckSequence => MghdlcConstants.UnderrunBadCrc,
+        HdlcUnderrunAction.Abort7 => 0,
+        HdlcUnderrunAction.Abort15 => MghdlcConstants.UnderrunAbort15,
+        HdlcUnderrunAction.Flag => MghdlcConstants.UnderrunFlag,
+        HdlcUnderrunAction.InvalidFrameCheckSequence => MghdlcConstants.UnderrunBadCrc,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private byte MapEncoding(MicroGateEncoding value) => value switch
+    private byte MapEncoding(HdlcEncoding value) => value switch
     {
-        MicroGateEncoding.Nrz => 0,
-        MicroGateEncoding.Nrzb => 1,
-        MicroGateEncoding.NrziMark => 2,
-        MicroGateEncoding.NrziSpace => 3,
-        MicroGateEncoding.BiphaseMark => 4,
-        MicroGateEncoding.BiphaseSpace => 5,
-        MicroGateEncoding.BiphaseLevel => 6,
-        MicroGateEncoding.DifferentialBiphaseLevel => 7,
+        HdlcEncoding.Nrz => 0,
+        HdlcEncoding.Nrzb => 1,
+        HdlcEncoding.NrziMark => 2,
+        HdlcEncoding.NrziSpace => 3,
+        HdlcEncoding.BiphaseMark => 4,
+        HdlcEncoding.BiphaseSpace => 5,
+        HdlcEncoding.BiphaseLevel => 6,
+        HdlcEncoding.DifferentialBiphaseLevel => 7,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private ushort MapCrc(MicroGateCrc value) => value switch
+    private ushort MapCrc(HdlcCrc value) => value switch
     {
-        MicroGateCrc.None => 0,
-        MicroGateCrc.Crc16Ccitt => 1,
-        MicroGateCrc.Crc32Ccitt => 2,
+        HdlcCrc.None => 0,
+        HdlcCrc.Crc16Ccitt => 1,
+        HdlcCrc.Crc32Ccitt => 2,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private uint MapIdlePattern(MicroGateIdlePattern value) => value switch
+    private uint MapIdlePattern(HdlcIdlePattern value) => value switch
     {
-        MicroGateIdlePattern.Flags => 0,
-        MicroGateIdlePattern.AlternatingZerosOnes => 1,
-        MicroGateIdlePattern.Zeros => 2,
-        MicroGateIdlePattern.Ones => 3,
-        MicroGateIdlePattern.AlternatingMarkSpace => 4,
-        MicroGateIdlePattern.Space => 5,
-        MicroGateIdlePattern.Mark => 6,
+        HdlcIdlePattern.Flags => 0,
+        HdlcIdlePattern.AlternatingZerosOnes => 1,
+        HdlcIdlePattern.Zeros => 2,
+        HdlcIdlePattern.Ones => 3,
+        HdlcIdlePattern.AlternatingMarkSpace => 4,
+        HdlcIdlePattern.Space => 5,
+        HdlcIdlePattern.Mark => 6,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private byte MapPreambleLength(MicroGatePreambleLength value) => value switch
+    private byte MapPreambleLength(HdlcPreambleLength value) => value switch
     {
-        MicroGatePreambleLength.Bits8 => 0,
-        MicroGatePreambleLength.Bits16 => 1,
-        MicroGatePreambleLength.Bits32 => 2,
-        MicroGatePreambleLength.Bits64 => 3,
+        HdlcPreambleLength.Bits8 => 0,
+        HdlcPreambleLength.Bits16 => 1,
+        HdlcPreambleLength.Bits32 => 2,
+        HdlcPreambleLength.Bits64 => 3,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
-    private byte MapPreamblePattern(MicroGatePreamblePattern value) => value switch
+    private byte MapPreamblePattern(HdlcPreamblePattern value) => value switch
     {
-        MicroGatePreamblePattern.None => 0,
-        MicroGatePreamblePattern.Zeros => 1,
-        MicroGatePreamblePattern.Flags => 2,
-        MicroGatePreamblePattern.Alternating10 => 3,
-        MicroGatePreamblePattern.Alternating01 => 4,
-        MicroGatePreamblePattern.Ones => 5,
+        HdlcPreamblePattern.None => 0,
+        HdlcPreamblePattern.Zeros => 1,
+        HdlcPreamblePattern.Flags => 2,
+        HdlcPreamblePattern.Alternating10 => 3,
+        HdlcPreamblePattern.Alternating01 => 4,
+        HdlcPreamblePattern.Ones => 5,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 }

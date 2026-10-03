@@ -6,6 +6,11 @@ namespace BlueHeighliner.MicroGate.Windows;
 internal static class MghdlcConstants
 {
     /// <summary>
+    /// Selects asynchronous mode in <see cref="MghdlcParams.Mode"/>.
+    /// </summary>
+    public static readonly uint ModeAsync = 1;
+
+    /// <summary>
     /// Selects HDLC synchronous mode in <see cref="MghdlcParams.Mode"/>.
     /// </summary>
     public static readonly uint ModeHdlc = 2;

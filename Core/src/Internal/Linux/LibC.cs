@@ -102,6 +102,50 @@ internal static partial class LibC
     public static partial int Poll(ref PollDescriptor descriptor, nuint count, int timeout);
 
     /// <summary>
+    /// Reads the terminal settings of a file descriptor, per POSIX <c>tcgetattr(3)</c>.
+    /// </summary>
+    /// <param name="fd">The terminal file descriptor.</param>
+    /// <param name="termios">A buffer, at least the size of the platform's <c>struct termios</c>, to receive the settings.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "tcgetattr", SetLastError = true)]
+    public static partial int Tcgetattr(int fd, [In, Out] byte[] termios);
+
+    /// <summary>
+    /// Applies terminal settings to a file descriptor, per POSIX <c>tcsetattr(3)</c>.
+    /// </summary>
+    /// <param name="fd">The terminal file descriptor.</param>
+    /// <param name="optionalActions">When the change takes effect; 0 is <c>TCSANOW</c>, at once.</param>
+    /// <param name="termios">The settings to apply.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "tcsetattr", SetLastError = true)]
+    public static partial int Tcsetattr(int fd, int optionalActions, [In, Out] byte[] termios);
+
+    /// <summary>
+    /// Changes terminal settings to raw mode, per <c>cfmakeraw(3)</c>.
+    /// </summary>
+    /// <param name="termios">The settings to change.</param>
+    [LibraryImport("libc", EntryPoint = "cfmakeraw")]
+    public static partial void Cfmakeraw([In, Out] byte[] termios);
+
+    /// <summary>
+    /// Sets the input speed in terminal settings, per <c>cfsetispeed(3)</c>.
+    /// </summary>
+    /// <param name="termios">The settings to change.</param>
+    /// <param name="speed">The speed constant, such as <c>B9600</c>.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "cfsetispeed", SetLastError = true)]
+    public static partial int Cfsetispeed([In, Out] byte[] termios, uint speed);
+
+    /// <summary>
+    /// Sets the output speed in terminal settings, per <c>cfsetospeed(3)</c>.
+    /// </summary>
+    /// <param name="termios">The settings to change.</param>
+    /// <param name="speed">The speed constant, such as <c>B9600</c>.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "cfsetospeed", SetLastError = true)]
+    public static partial int Cfsetospeed([In, Out] byte[] termios, uint speed);
+
+    /// <summary>
     /// Waits for all output written to a file descriptor to be transmitted, per POSIX <c>tcdrain(3)</c>.
     /// </summary>
     /// <param name="fd">The file descriptor to drain.</param>

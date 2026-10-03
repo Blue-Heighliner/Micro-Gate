@@ -1,6 +1,6 @@
 namespace BlueHeighliner.MicroGate;
 
-internal sealed class DroppingMicroGateDevice(IMicroGateDevice inner, Func<HdlcFrame, int, bool> shouldDrop) : IMicroGateDevice
+internal sealed class DroppingMicroGateDevice(IMicroGateDevice inner, Func<HdlcWireFrame, int, bool> shouldDrop) : IMicroGateDevice
 {
     private int informationFrames;
 
@@ -8,8 +8,8 @@ internal sealed class DroppingMicroGateDevice(IMicroGateDevice inner, Func<HdlcF
 
     public void Write(ReadOnlyMemory<byte> frame)
     {
-        HdlcFrame parsed = HdlcFrame.Parse(frame);
-        int index = parsed.Kind == HdlcFrameKind.Information ? Interlocked.Increment(ref informationFrames) : 0;
+        HdlcWireFrame parsed = HdlcWireFrame.Parse(frame);
+        int index = parsed.Kind == HdlcWireFrameKind.Information ? Interlocked.Increment(ref informationFrames) : 0;
         if (index > 0 && shouldDrop(parsed, index))
         {
             return;

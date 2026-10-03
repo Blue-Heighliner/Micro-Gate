@@ -10,23 +10,23 @@ internal interface IFrameDescriber
     /// </summary>
     /// <param name="frame">The frame to describe.</param>
     /// <returns>The frame type and its address, send and receive sequence numbers, poll/final bit, and data size, each labeled with its field name.</returns>
-    string Describe(MicroGateFrame frame);
+    string Describe(HdlcFrame frame);
 
     /// <summary>
     /// Describes every HDLC field of a frame as a labeled list.
     /// </summary>
     /// <param name="frame">The frame to describe.</param>
     /// <returns>The address, control byte, frame type, poll/final bit, sequence numbers, and data size, or for a frame that could not be parsed its error and size.</returns>
-    IReadOnlyList<LogField> Details(MicroGateFrame frame);
+    IReadOnlyList<LogField> Details(HdlcFrame frame);
 }
 
 /// <inheritdoc />
 internal sealed class FrameDescriber : IFrameDescriber
 {
     /// <inheritdoc />
-    public string Describe(MicroGateFrame frame)
+    public string Describe(HdlcFrame frame)
     {
-        if (frame.Kind == MicroGateFrameKind.Malformed)
+        if (frame.Kind == HdlcFrameKind.Malformed)
         {
             return $"MALFORMED  Error:{frame.ErrorMessage}  Size:{frame.Raw.Length}B";
         }
@@ -48,9 +48,9 @@ internal sealed class FrameDescriber : IFrameDescriber
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<LogField> Details(MicroGateFrame frame)
+    public IReadOnlyList<LogField> Details(HdlcFrame frame)
     {
-        if (frame.Kind == MicroGateFrameKind.Malformed)
+        if (frame.Kind == HdlcFrameKind.Malformed)
         {
             return [Field("Frame Type", "Malformed"), Field("Error", frame.ErrorMessage ?? string.Empty), Field("Size", $"{frame.Raw.Length}B (shown below)")];
         }
@@ -78,31 +78,31 @@ internal sealed class FrameDescriber : IFrameDescriber
 
     private LogField Field(string name, string value) => new() { Name = name, Value = value };
 
-    private string Abbreviate(MicroGateFrameKind kind) => kind switch
+    private string Abbreviate(HdlcFrameKind kind) => kind switch
     {
-        MicroGateFrameKind.Information => "I",
-        MicroGateFrameKind.ReceiveReady => "RR",
-        MicroGateFrameKind.ReceiveNotReady => "RNR",
-        MicroGateFrameKind.Reject => "REJ",
-        MicroGateFrameKind.SetAsynchronousBalancedMode => "SABM",
-        MicroGateFrameKind.Disconnect => "DISC",
-        MicroGateFrameKind.UnnumberedAcknowledge => "UA",
-        MicroGateFrameKind.DisconnectedMode => "DM",
-        MicroGateFrameKind.FrameReject => "FRMR",
+        HdlcFrameKind.Information => "I",
+        HdlcFrameKind.ReceiveReady => "RR",
+        HdlcFrameKind.ReceiveNotReady => "RNR",
+        HdlcFrameKind.Reject => "REJ",
+        HdlcFrameKind.SetAsynchronousBalancedMode => "SABM",
+        HdlcFrameKind.Disconnect => "DISC",
+        HdlcFrameKind.UnnumberedAcknowledge => "UA",
+        HdlcFrameKind.DisconnectedMode => "DM",
+        HdlcFrameKind.FrameReject => "FRMR",
         _ => "?",
     };
 
-    private string Name(MicroGateFrameKind kind) => kind switch
+    private string Name(HdlcFrameKind kind) => kind switch
     {
-        MicroGateFrameKind.Information => "Information (I)",
-        MicroGateFrameKind.ReceiveReady => "Receive Ready (RR)",
-        MicroGateFrameKind.ReceiveNotReady => "Receive Not Ready (RNR)",
-        MicroGateFrameKind.Reject => "Reject (REJ)",
-        MicroGateFrameKind.SetAsynchronousBalancedMode => "Set Asynchronous Balanced Mode (SABM)",
-        MicroGateFrameKind.Disconnect => "Disconnect (DISC)",
-        MicroGateFrameKind.UnnumberedAcknowledge => "Unnumbered Acknowledge (UA)",
-        MicroGateFrameKind.DisconnectedMode => "Disconnected Mode (DM)",
-        MicroGateFrameKind.FrameReject => "Frame Reject (FRMR)",
+        HdlcFrameKind.Information => "Information (I)",
+        HdlcFrameKind.ReceiveReady => "Receive Ready (RR)",
+        HdlcFrameKind.ReceiveNotReady => "Receive Not Ready (RNR)",
+        HdlcFrameKind.Reject => "Reject (REJ)",
+        HdlcFrameKind.SetAsynchronousBalancedMode => "Set Asynchronous Balanced Mode (SABM)",
+        HdlcFrameKind.Disconnect => "Disconnect (DISC)",
+        HdlcFrameKind.UnnumberedAcknowledge => "Unnumbered Acknowledge (UA)",
+        HdlcFrameKind.DisconnectedMode => "Disconnected Mode (DM)",
+        HdlcFrameKind.FrameReject => "Frame Reject (FRMR)",
         _ => "Unknown",
     };
 }

@@ -11,7 +11,7 @@ internal enum HdlcConnectionState
     Disconnected,
 
     /// <summary>
-    /// A <see cref="HdlcFrameKind.SetAsynchronousBalancedMode"/> frame has been sent and a matching acknowledgement is awaited.
+    /// A <see cref="HdlcWireFrameKind.SetAsynchronousBalancedMode"/> frame has been sent and a matching acknowledgement is awaited.
     /// </summary>
     Connecting,
 
@@ -21,7 +21,7 @@ internal enum HdlcConnectionState
     Connected,
 
     /// <summary>
-    /// A <see cref="HdlcFrameKind.Disconnect"/> frame has been sent and a matching acknowledgement is awaited.
+    /// A <see cref="HdlcWireFrameKind.Disconnect"/> frame has been sent and a matching acknowledgement is awaited.
     /// </summary>
     Disconnecting,
 }

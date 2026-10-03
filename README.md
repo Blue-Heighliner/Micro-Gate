@@ -19,11 +19,11 @@ dotnet add package BlueHeighliner.MicroGate
 using BlueHeighliner.MicroGate;
 
 IMicroGatePortSource ports = new MicroGatePortSource();
-IMicroGatePeerFactory factory = new MicroGatePeerFactory();
+IHdlcPeerFactory factory = new HdlcPeerFactory();
 
 IReadOnlyList<string> names = await ports.GetPorts();
 
-await using IMicroGatePeer peer = factory.Create();
+await using IHdlcPeer peer = factory.Create();
 peer.Receiver = data =>
 {
     using (data)
@@ -37,6 +37,8 @@ await peer.Connect(address: 0x01, remoteAddress: 0x03);
 await peer.Send("Hello"u8.ToArray());
 ```
 
+The same devices can also be used as a plain asynchronous serial port (baud rate, data bits, stop bits, parity) through `IUartPeer`; see `Docs/Usage.md`.
+
 ## Documentation
 
 | File | Covers |
@@ -46,7 +48,7 @@ await peer.Send("Hello"u8.ToArray());
 | [`Docs/Architecture.md`](Docs/Architecture.md) | High-level design decisions. |
 | [`Docs/Project.md`](Docs/Project.md) | This repository's scripts, publishing, and CI. |
 | [`Docs/MicroGate/`](Docs/MicroGate) | The vendor serial API documentation and driver headers (`synclink.h`, `Mghdlc.h`) for Linux and Windows that the native layers are written against. |
-| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, peer lifecycle, Linux and Windows transports). |
+| [`Docs/Components/`](Docs/Components) | One file per complex internal component (HDLC engine, HDLC peer lifecycle, UART peer, Linux and Windows transports). |
 
 ## Controller
 

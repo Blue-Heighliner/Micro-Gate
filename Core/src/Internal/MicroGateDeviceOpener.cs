@@ -12,5 +12,5 @@ internal interface IMicroGateDeviceOpener
     /// <param name="options">The device configuration to apply.</param>
     /// <returns>The opened and configured device.</returns>
     /// <exception cref="IOException">The device could not be opened.</exception>
-    IMicroGateDevice Open(string portName, MicroGatePeerOptions options);
+    IMicroGateDevice Open(string portName, HdlcPeerOptions options);
 }
