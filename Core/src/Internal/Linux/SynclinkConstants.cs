@@ -14,6 +14,7 @@ internal static class SynclinkConstants
     private static readonly int iocDirectionShift = iocSizeShift + iocSizeBits;
     private static readonly int iocDirectionNone = 0;
     private static readonly int iocDirectionWrite = 1;
+    private static readonly int iocDirectionRead = 2;
     private static readonly int magicNumber = 'm';
 
     /// <summary>
@@ -176,8 +177,56 @@ internal static class SynclinkConstants
     /// </summary>
     public static readonly nuint EnableReceiver = Io(5);
 
+    /// <summary>
+    /// The <c>MGSL_IOCWAITEVENT</c> request that blocks until one of the events in its argument has occurred, and, for a modem wire event, also completes at once while the wire is already in the state the event names.
+    /// </summary>
+    public static readonly nuint WaitEvent = Iowr(8, sizeof(int));
+
+    /// <summary>
+    /// The signal number (<c>SIGURG</c>, whose default action is to be ignored) that interrupts a thread blocked in a wait, so the wait returns <c>EINTR</c> instead of being restarted.
+    /// </summary>
+    public static readonly int InterruptSignal = 23;
+
+    /// <summary>
+    /// The <c>TIOCMGET</c> request that reads the modem control and status wires.
+    /// </summary>
+    public static readonly nuint GetModemSignals = 0x5415;
+
+    /// <summary>
+    /// The <c>TIOCMBIS</c> request that turns on the modem output wires named in its argument.
+    /// </summary>
+    public static readonly nuint RaiseModemSignals = 0x5416;
+
+    /// <summary>
+    /// The <c>TIOCM_DTR</c> bit: the data terminal ready output.
+    /// </summary>
+    public static readonly int ModemDataTerminalReady = 0x002;
+
+    /// <summary>
+    /// The <c>TIOCM_RTS</c> bit: the request to send output.
+    /// </summary>
+    public static readonly int ModemRequestToSend = 0x004;
+
+    /// <summary>
+    /// The <c>TIOCM_CTS</c> bit: the clear to send input.
+    /// </summary>
+    public static readonly int ModemClearToSend = 0x020;
+
+    /// <summary>
+    /// The <c>TIOCM_CAR</c> bit: the data carrier detect input.
+    /// </summary>
+    public static readonly int ModemCarrierDetect = 0x040;
+
+    /// <summary>
+    /// The <c>TIOCM_DSR</c> bit: the data set ready input.
+    /// </summary>
+    public static readonly int ModemDataSetReady = 0x100;
+
     private static nuint Io(int number) =>
         (nuint)(uint)((iocDirectionNone << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift));
+
+    private static nuint Iowr(int number, int size) =>
+        (nuint)(uint)(((iocDirectionRead | iocDirectionWrite) << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift) | (size << iocSizeShift));
 
     private static nuint Iow(int number, int size) =>
         (nuint)(uint)((iocDirectionWrite << iocDirectionShift) | (magicNumber << iocTypeShift) | (number << iocNumberShift) | (size << iocSizeShift));

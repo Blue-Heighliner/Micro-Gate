@@ -83,7 +83,17 @@ public sealed record HdlcPeerOptions
     public bool Loopback { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the peer ends when the remote station disappears, detected from the modem status wires: data carrier detect and data set ready, which a remote station drops when it is switched off, unplugged or closed. Defaults to <see langword="true"/>. Detection starts once both wires have been seen active, so a remote station that raises them only later is not cut off before it exists, and a cable or station that never raises them, or holds them active, is never disconnected. Set it to <see langword="false"/> for a remote station that toggles the wires during normal operation. Local only.
+    /// </summary>
+    public bool DetectDisconnect { get; init; } = true;
+
+    /// <summary>
     /// Gets a value indicating whether every received frame is parsed and pushed to <see cref="IHdlcPeer.Monitored"/>, and every frame written to the device to <see cref="IHdlcPeer.Transmitted"/>. Defaults to <see langword="false"/>, in which case received frames are not parsed for monitoring at all. Local only.
     /// </summary>
     public bool EnableMonitor { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the modem wires are reported on <see cref="IHdlcPeer.SignalsChanged"/> and <see cref="IHdlcPeer.Signals"/>. Defaults to <see langword="false"/>, in which case <see cref="IHdlcPeer.Signals"/> stays <see cref="MicroGateSignals.None"/> and <see cref="IHdlcPeer.SignalsChanged"/> never emits. It does not affect <see cref="DetectDisconnect"/>, which watches the wires for itself when it is <see langword="true"/>; with both off, the wires are not watched at all. Local only.
+    /// </summary>
+    public bool EnableSignals { get; init; }
 }

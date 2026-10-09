@@ -74,6 +74,7 @@
                             <Button x:Name="RefreshButton" Content="Refresh Ports" Click="RefreshPorts_Click" />
                             <Button x:Name="ConnectButton" Grid.Column="2" Content="Connect" Classes="accent" Click="Connect_Click" />
                         </Grid>
+                        <Button x:Name="DropButton" Content="Drop (no disconnect)" Classes="accent" IsVisible="False" ToolTip.Tip="Close the port at once without sending a disconnect, leaving the remote station to notice" Click="Drop_Click" />
                         <Expander Header="Link Options" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <Expander.Resources>
                                 <x:Double x:Key="ExpanderMinHeight">26</x:Double>
@@ -124,9 +125,13 @@
 
             <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
 
-            <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto">
+            <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto">
+                <Border Grid.Row="0" Background="{StaticResource SidebarBackgroundBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <local:SignalBar x:Name="Signals" />
+                </Border>
+
                 <ListBox x:Name="LogListBox"
-                         Grid.Row="0"
+                         Grid.Row="1"
                          Background="{StaticResource EditorBackgroundBrush}"
                          BorderThickness="0"
                          FontFamily="Cascadia Code,Consolas,Menlo,monospace"
@@ -159,9 +164,9 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <Border Grid.Row="1" Height="1" Background="{StaticResource BorderBrush}" />
+                <Border Grid.Row="2" Height="1" Background="{StaticResource BorderBrush}" />
 
-                <Border x:Name="SendPanel" Grid.Row="2" Background="{StaticResource SidebarBackgroundBrush}" Padding="16">
+                <Border x:Name="SendPanel" Grid.Row="3" Background="{StaticResource SidebarBackgroundBrush}" Padding="16">
                     <StackPanel Spacing="6">
                         <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
                             <TextBlock Grid.Column="0" Text="SEND" Classes="section-header" VerticalAlignment="Center" />

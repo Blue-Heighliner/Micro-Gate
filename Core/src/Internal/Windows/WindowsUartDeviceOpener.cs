@@ -62,6 +62,7 @@ internal sealed class WindowsUartDeviceOpener(IWindowsNative native, TimeSpan? b
         };
         Check(native.SetParams(handle, parameters), "set the port parameters");
         Check(native.EnableReceiver(handle, true), "enable the receiver");
+        native.RaiseSignals(handle);
     }
 
     private void Check(uint status, string step)

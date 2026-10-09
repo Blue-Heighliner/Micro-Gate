@@ -87,6 +87,7 @@ public sealed class WindowsMicroGateDeviceOpenerTests
             Times.Once);
         native.Verify(x => x.SetIdleMode(9, 6u), Times.Once);
         native.Verify(x => x.EnableReceiver(9, true), Times.Once);
+        native.Verify(x => x.RaiseSignals(9), Times.Once);
         native.Verify(x => x.EnableTransmitter(It.IsAny<nint>(), It.IsAny<bool>()), Times.Never);
         native.Verify(x => x.Close(9), Times.Once);
     }

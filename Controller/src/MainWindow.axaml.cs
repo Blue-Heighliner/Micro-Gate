@@ -82,6 +82,7 @@ internal sealed partial class MainWindow : Window
     private readonly int uartMaxCells = 65536;
     private ControllerMode mode = ControllerMode.HdlcPeer;
     private int maxInfoField;
+    private readonly MicroGateSignals[] portSignals = [MicroGateSignals.None, MicroGateSignals.None];
     private CancellationTokenSource? connectCancellation;
     private int columns = 30;
     private LogView view = LogView.Frames;
@@ -173,6 +174,18 @@ internal sealed partial class MainWindow : Window
                 break;
         }
 
+        UpdateState();
+    }
+
+    private async void Drop_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!HasOpenPorts)
+        {
+            return;
+        }
+
+        await Release(drop: true);
+        AppendMessage("Dropped without sending a disconnect.");
         UpdateState();
     }
 
@@ -341,6 +354,7 @@ internal sealed partial class MainWindow : Window
         connectCancellation ??= new CancellationTokenSource();
         NotePort(portName);
         subscriptions.Add(opened.StateChanged.Subscribe(state => OnStateChanged(opened, state)));
+        subscriptions.Add(WatchSignals(opened.SignalsChanged, label));
         subscriptions.Add(opened.Exceptions.Subscribe(ex => Dispatcher.UIThread.Post(() => AppendMessage($"{label}Error: {ex.Message}"))));
         return opened;
     }
@@ -352,13 +366,55 @@ internal sealed partial class MainWindow : Window
         connectCancellation ??= new CancellationTokenSource();
         NotePort(portName);
         subscriptions.Add(opened.StateChanged.Subscribe(state => OnUartStateChanged(opened, state)));
+        subscriptions.Add(WatchSignals(opened.SignalsChanged, label));
         subscriptions.Add(opened.Exceptions.Subscribe(ex => Dispatcher.UIThread.Post(() => AppendMessage($"{label}Error: {ex.Message}"))));
         return opened;
     }
 
-    private void NotePort(string portName) => PortStatusText.Text = peers.Count + uartPeers.Count == 1 ? portName : $"{PortStatusText.Text}, {portName}";
+    private IDisposable WatchSignals(IObservable<MicroGateSignals> source, string label)
+    {
+        int index = peers.Count + uartPeers.Count - 1;
+        return source.Subscribe(signals => Dispatcher.UIThread.Post(() =>
+        {
+            MicroGateSignals previous = portSignals[index];
+            portSignals[index] = signals;
+            Signals.Update(index, signals);
+            AppendMessage($"{label}Signals: {Describe(previous, signals)}");
+        }));
+    }
 
-    private async Task Release()
+    private string Describe(MicroGateSignals previous, MicroGateSignals current)
+    {
+        List<string> active = [];
+        List<string> lost = [];
+        foreach ((MicroGateSignals signal, string name) in new[] { (MicroGateSignals.DataCarrierDetect, "DCD"), (MicroGateSignals.DataSetReady, "DSR"), (MicroGateSignals.ClearToSend, "CTS"), (MicroGateSignals.DataTerminalReady, "DTR"), (MicroGateSignals.RequestToSend, "RTS") })
+        {
+            if (current.HasFlag(signal))
+            {
+                active.Add(previous.HasFlag(signal) ? name : "+" + name);
+            }
+            else if (previous.HasFlag(signal))
+            {
+                lost.Add("-" + name);
+            }
+        }
+
+        if (lost.Count > 0)
+        {
+            active.Add($"({string.Join(" ", lost)})");
+        }
+
+        return active.Count == 0 ? "none active" : string.Join(" ", active);
+    }
+
+    private void NotePort(string portName)
+    {
+        PortStatusText.Text = peers.Count + uartPeers.Count == 1 ? portName : $"{PortStatusText.Text}, {portName}";
+        Array.Fill(portSignals, MicroGateSignals.None, peers.Count + uartPeers.Count - 1, 1);
+        Signals.AddPort(portName);
+    }
+
+    private async Task Release(bool drop = false)
     {
         IHdlcPeer[] released = [.. peers];
         IUartPeer[] releasedUart = [.. uartPeers];
@@ -373,13 +429,15 @@ internal sealed partial class MainWindow : Window
 
         relays.Clear();
         PortStatusText.Text = "No active port";
+        Signals.Reset();
+
         foreach (IDisposable subscription in subscriptions)
         {
             subscription.Dispose();
         }
 
         subscriptions.Clear();
-        await Task.WhenAll(released.Select(peer => peer.DisposeAsync().AsTask()).Concat(releasedUart.Select(peer => peer.DisposeAsync().AsTask())));
+        await Task.WhenAll(released.Select(peer => (drop ? peer.Drop() : peer.DisposeAsync()).AsTask()).Concat(releasedUart.Select(peer => peer.DisposeAsync().AsTask())));
     }
 
     private async Task Relay(ChannelReader<byte[]> reader, IHdlcPeer target, string direction)
@@ -536,6 +594,7 @@ internal sealed partial class MainWindow : Window
     {
         bool active = HasOpenPorts;
         ModeComboBox.IsEnabled = !active;
+        DropButton.IsVisible = mode == ControllerMode.HdlcPeer && active;
         ConnectButton.Content = (mode, active) switch
         {
             (ControllerMode.HdlcPeer, false) => "Connect",

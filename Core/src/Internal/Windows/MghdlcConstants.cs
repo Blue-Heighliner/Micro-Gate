@@ -56,6 +56,36 @@ internal static class MghdlcConstants
     public static readonly uint InterfaceRs232 = 1;
 
     /// <summary>
+    /// The <c>SerialSignal_DCD</c> bit: the data carrier detect input.
+    /// </summary>
+    public static readonly byte SignalCarrierDetect = 0x01;
+
+    /// <summary>
+    /// The <c>SerialSignal_CTS</c> bit: the clear to send input.
+    /// </summary>
+    public static readonly byte SignalClearToSend = 0x10;
+
+    /// <summary>
+    /// The <c>SerialSignal_RTS</c> bit: the request to send output.
+    /// </summary>
+    public static readonly byte SignalRequestToSend = 0x20;
+
+    /// <summary>
+    /// The <c>SerialSignal_DSR</c> bit: the data set ready input.
+    /// </summary>
+    public static readonly byte SignalDataSetReady = 0x40;
+
+    /// <summary>
+    /// The <c>SerialSignal_DTR</c> bit: the data terminal ready output.
+    /// </summary>
+    public static readonly byte SignalDataTerminalReady = 0x80;
+
+    /// <summary>
+    /// The Win32 <c>ERROR_IO_PENDING</c> code, which an overlapped call returns while it is still running.
+    /// </summary>
+    public static readonly uint IoPending = 997;
+
+    /// <summary>
     /// The <c>MgslOpenByName</c> success status.
     /// </summary>
     public static readonly uint Success = 0;

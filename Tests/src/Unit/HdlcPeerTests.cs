@@ -1545,4 +1545,158 @@ public sealed class HdlcPeerTests : IDisposable
 
         Assert.Equal(1, calls);
     }
+
+    [Fact]
+    public async Task DetectDisconnect_WhenASignalGoesInactiveAfterBeingActive_DisconnectsAndFailsConnect()
+    {
+        MicroGateSignals active = MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady;
+        SignalSource source = new(active);
+        source.Attach(harness.Device);
+        HdlcPeer peer = harness.CreatePeer();
+        TestObserver<HdlcPeerState> states = new();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.StateChanged.Subscribe(states);
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", harness.Options with { EnableSignals = true });
+        Assert.Equal(active, await signals.Next());
+        Task connecting = peer.Connect(harness.Address, harness.RemoteAddress).AsTask();
+        await harness.NextWritten(0);
+        harness.Receive(harness.Peer(HdlcWireFrameKind.UnnumberedAcknowledge));
+        await connecting.WaitAsync(timeout);
+        Assert.True(peer.IsConnected);
+
+        source.Set(MicroGateSignals.DataCarrierDetect);
+
+        Assert.Equal(MicroGateSignals.DataCarrierDetect, await signals.Next());
+        await states.Completed.WaitAsync(timeout);
+        Assert.Equal(HdlcPeerState.Disconnected, peer.State);
+        Assert.False(peer.IsConnected);
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DetectDisconnect_WhenLostBeforeTheLinkIsUp_FailsConnectWithIoException()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        source.Attach(harness.Device);
+        HdlcPeer peer = harness.CreatePeer();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", harness.Options with { EnableSignals = true });
+        Assert.Equal(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady, await signals.Next());
+        Task connecting = peer.Connect(harness.Address, harness.RemoteAddress).AsTask();
+        await harness.NextWritten(0);
+
+        source.Set(MicroGateSignals.None);
+
+        await Assert.ThrowsAsync<IOException>(async () => await connecting.WaitAsync(timeout));
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public void DetectDisconnect_IsOnByDefault() => Assert.True(new HdlcPeerOptions().DetectDisconnect);
+
+    [Fact]
+    public async Task DetectDisconnect_WhenOff_KeepsThePeerReadyThroughALostSignal()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        source.Attach(harness.Device);
+        await using HdlcPeer peer = harness.CreatePeer();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", harness.Options with { DetectDisconnect = false, EnableSignals = true });
+        await signals.Next();
+
+        source.Set(MicroGateSignals.None);
+
+        Assert.Equal(MicroGateSignals.None, await signals.Next());
+        await Task.Delay(100);
+        Assert.Equal(HdlcPeerState.Ready, peer.State);
+    }
+
+    [Fact]
+    public async Task EnableSignals_WhenOff_NeverReportsSignalsButStillDetectsDisconnect()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        source.Attach(harness.Device);
+        HdlcPeer peer = harness.CreatePeer();
+        TestObserver<HdlcPeerState> states = new();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.StateChanged.Subscribe(states);
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", harness.Options);
+        await Task.Delay(100);
+
+        source.Set(MicroGateSignals.None);
+
+        await states.Completed.WaitAsync(timeout);
+        Assert.Equal(HdlcPeerState.Disconnected, peer.State);
+        Assert.Empty(signals.Seen);
+        Assert.Equal(MicroGateSignals.None, peer.Signals);
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task EnableSignals_WhenOffAndDetectDisconnectOff_DoesNotWatchTheWiresAtAll()
+    {
+        new SignalSource(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady).Attach(harness.Device);
+        await using HdlcPeer peer = harness.CreatePeer();
+
+        await peer.Start("port", harness.Options with { DetectDisconnect = false });
+        await Task.Delay(100);
+
+        harness.Device.Verify(x => x.ReadSignals(), Times.Never);
+        harness.Device.Verify(x => x.WaitSignals(It.IsAny<MicroGateSignals>()), Times.Never);
+        Assert.Equal(MicroGateSignals.None, peer.Signals);
+    }
+
+    [Fact]
+    public async Task Dispose_WhenConnected_SendsADisconnect()
+    {
+        HdlcPeer peer = await harness.Connect();
+
+        await peer.DisposeAsync();
+
+        Assert.Equal(HdlcWireFrameKind.Disconnect, (await harness.NextWritten(1)).Kind);
+    }
+
+    [Fact]
+    public async Task Drop_WhenConnected_ClosesTheDeviceWithoutSendingADisconnect()
+    {
+        HdlcPeer peer = await harness.Connect();
+        TestObserver<HdlcPeerState> states = new();
+        peer.StateChanged.Subscribe(states);
+
+        await peer.Drop();
+
+        await states.Completed.WaitAsync(timeout);
+        Assert.Single(harness.Written);
+        Assert.Equal(HdlcPeerState.Disconnected, peer.State);
+        harness.Device.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Drop_BeforeConnecting_AndRepeatedly_IsSafe()
+    {
+        HdlcPeer peer = harness.CreatePeer();
+        await peer.Start("port", harness.Options);
+
+        await peer.Drop();
+        await peer.Drop();
+        await peer.DisposeAsync();
+
+        Assert.Empty(harness.Written);
+        Assert.Equal(HdlcPeerState.Disconnected, peer.State);
+        harness.Device.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task Drop_ThenSend_ThrowsInvalidOperation()
+    {
+        HdlcPeer peer = await harness.Connect();
+
+        await peer.Drop();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await peer.Send(new byte[] { 1 }));
+    }
 }

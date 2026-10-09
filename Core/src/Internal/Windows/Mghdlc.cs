@@ -67,6 +67,47 @@ internal static partial class Mghdlc
     public static partial uint MgslSetOption(nint handle, uint optionId, uint value);
 
     /// <summary>
+    /// Reads the serial control and status signals, per <c>MgslGetSerialSignals</c>.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="signals">Receives the active signals as <c>SerialSignal_*</c> bits.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslGetSerialSignals")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslGetSerialSignals(nint handle, out byte signals);
+
+    /// <summary>
+    /// Sets the serial output signals, per <c>MgslSetSerialSignals</c>.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="signals">The output signals to turn on, as <c>SerialSignal_*</c> bits; the others are turned off.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslSetSerialSignals")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslSetSerialSignals(nint handle, byte signals);
+
+    /// <summary>
+    /// Waits for modem wire events, per <c>MgslWaitEvent</c>. The call may complete later: the overlapped event is signaled when it does.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="mask">The <c>MgslEvent_*</c> events of interest.</param>
+    /// <param name="events">A pointer to memory that stays valid until completion and receives the events that occurred.</param>
+    /// <param name="overlapped">A pointer to an overlapped structure, with an event, that stays valid until completion.</param>
+    /// <returns>0 if the call completed, <c>ERROR_IO_PENDING</c> if it is pending, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslWaitEvent")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslWaitEvent(nint handle, uint mask, nint events, nint overlapped);
+
+    /// <summary>
+    /// Cancels a pending <see cref="MgslWaitEvent"/> issued from another thread, per <c>MgslCancelWaitEvent</c>, which signals its overlapped event with no events.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    [LibraryImport("mghdlc.dll", EntryPoint = "MgslCancelWaitEvent")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    public static partial uint MgslCancelWaitEvent(nint handle);
+
+    /// <summary>
     /// Enables or disables the receiver, per <c>MgslEnableReceiver</c>. Disabling cancels a blocked <see cref="MgslReadWithStatus"/>.
     /// </summary>
     /// <param name="handle">The device handle.</param>

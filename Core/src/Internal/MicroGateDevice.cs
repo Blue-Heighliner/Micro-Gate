@@ -31,6 +31,24 @@ internal interface IMicroGateDevice : IDisposable
     void DisableReceiver();
 
     /// <summary>
+    /// Reads the modem status wires.
+    /// </summary>
+    /// <returns>The wires that are active, or <see langword="null"/> if the device cannot report them.</returns>
+    MicroGateSignals? ReadSignals();
+
+    /// <summary>
+    /// Blocks until an input wire (data carrier detect, data set ready or clear to send) differs from <paramref name="current"/>, then reads the wires. It waits on the driver's events rather than polling, and a change that happened before the call is not missed.
+    /// </summary>
+    /// <param name="current">The wires as they were last read.</param>
+    /// <returns>The wires after the change, or <see langword="null"/> once <see cref="CancelSignalWait"/> has been called or the device cannot report them.</returns>
+    MicroGateSignals? WaitSignals(MicroGateSignals current);
+
+    /// <summary>
+    /// Wakes a blocked <see cref="WaitSignals"/>, which then returns <see langword="null"/>, and makes later calls return it at once. It may be called repeatedly, from any thread.
+    /// </summary>
+    void CancelSignalWait();
+
+    /// <summary>
     /// Disables the transmitter, which cancels any blocked <see cref="Write"/> and discards data not yet sent.
     /// </summary>
     void DisableTransmitter();

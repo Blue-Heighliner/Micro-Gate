@@ -97,5 +97,7 @@
         <CheckBox x:Name="LoopbackCheckBox" Content="Internal loopback" FontSize="12" MinHeight="24" />
         </StackPanel>
         </StackPanel>
+        <TextBlock Text="WIRE SIGNALS" Classes="section-header" />
+        <CheckBox x:Name="DetectDisconnectCheckBox" IsChecked="True" Content="Detect disconnect" FontSize="12" MinHeight="24" ToolTip.Tip="End the link when DCD or DSR goes inactive after having been active" />
     </StackPanel>
 </UserControl>

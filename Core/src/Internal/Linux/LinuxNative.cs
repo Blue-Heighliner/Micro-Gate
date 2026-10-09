@@ -121,6 +121,41 @@ internal interface ILinuxNative
     /// <param name="fileDescriptor">The file descriptor to configure.</param>
     /// <returns>The result of setting the flags, or -1 on failure.</returns>
     int ClearNonBlocking(int fileDescriptor);
+
+    /// <summary>
+    /// Reads the modem control and status wires.
+    /// </summary>
+    /// <param name="fileDescriptor">The file descriptor to query.</param>
+    /// <returns>The active wires as <c>TIOCM_*</c> bits, or -1 on failure.</returns>
+    int GetSignals(int fileDescriptor);
+
+    /// <summary>
+    /// Blocks until one of the given modem wire events occurs, or the calling thread is interrupted by <see cref="InterruptThread"/>.
+    /// </summary>
+    /// <param name="fileDescriptor">The file descriptor to wait on.</param>
+    /// <param name="events">The <c>MgslEvent_*</c> events of interest.</param>
+    /// <returns>The events that occurred, 0 if the wait was interrupted, or -1 on failure.</returns>
+    int WaitSignalEvents(int fileDescriptor, int events);
+
+    /// <summary>
+    /// Gets the identifier of the calling thread, to pass to <see cref="InterruptThread"/>.
+    /// </summary>
+    /// <returns>The thread identifier.</returns>
+    nuint CurrentThread();
+
+    /// <summary>
+    /// Interrupts a thread blocked in <see cref="WaitSignalEvents"/>, making that call return 0. The first call installs a process-wide handler for the interrupt signal, which does nothing.
+    /// </summary>
+    /// <param name="thread">The identifier of a thread that has not exited.</param>
+    /// <returns>0 on success, or an error number.</returns>
+    int InterruptThread(nuint thread);
+
+    /// <summary>
+    /// Turns on the data terminal ready and request to send outputs, which tell the remote station this one is present.
+    /// </summary>
+    /// <param name="fileDescriptor">The file descriptor to configure.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    int RaiseSignals(int fileDescriptor);
 }
 
 /// <summary>
@@ -138,6 +173,8 @@ internal sealed class LinuxNative : ILinuxNative
     private readonly uint parityOdd = 0x200;
     private readonly uint ignoreModemLines = 0x800;
     private readonly uint fallbackSpeed = 15;
+    private readonly Lock handlerLock = new();
+    private bool handlerInstalled;
     private readonly Dictionary<int, uint> speeds = new()
     {
         [50] = 1,
@@ -288,6 +325,43 @@ internal sealed class LinuxNative : ILinuxNative
     public int EnableTransmitter(int fileDescriptor, bool enabled) => LibC.Ioctl(fileDescriptor, SynclinkConstants.EnableTransmitter, enabled ? SynclinkConstants.Enabled : SynclinkConstants.Disabled);
 
     /// <inheritdoc />
+    public int GetSignals(int fileDescriptor)
+    {
+        int signals = 0;
+        return LibC.Ioctl(fileDescriptor, SynclinkConstants.GetModemSignals, ref signals) < 0 ? -1 : signals;
+    }
+
+    /// <inheritdoc />
+    public int WaitSignalEvents(int fileDescriptor, int events)
+    {
+        EnsureInterruptHandler();
+        int result = LibC.Ioctl(fileDescriptor, SynclinkConstants.WaitEvent, ref events);
+        if (result < 0)
+        {
+            return WasInterrupted() ? 0 : -1;
+        }
+
+        return events;
+    }
+
+    /// <inheritdoc />
+    public nuint CurrentThread() => LibC.ThreadSelf();
+
+    /// <inheritdoc />
+    public int InterruptThread(nuint thread)
+    {
+        EnsureInterruptHandler();
+        return LibC.ThreadKill(thread, SynclinkConstants.InterruptSignal);
+    }
+
+    /// <inheritdoc />
+    public int RaiseSignals(int fileDescriptor)
+    {
+        int signals = SynclinkConstants.ModemDataTerminalReady | SynclinkConstants.ModemRequestToSend;
+        return LibC.Ioctl(fileDescriptor, SynclinkConstants.RaiseModemSignals, ref signals);
+    }
+
+    /// <inheritdoc />
     public int ClearNonBlocking(int fileDescriptor)
     {
         int flags = LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlGetFlags);
@@ -297,6 +371,21 @@ internal sealed class LinuxNative : ILinuxNative
         }
 
         return LibC.Fcntl(fileDescriptor, SynclinkConstants.FcntlSetFlags, flags & SynclinkConstants.FileStatusFlagMask);
+    }
+
+    private void EnsureInterruptHandler()
+    {
+        lock (handlerLock)
+        {
+            if (handlerInstalled)
+            {
+                return;
+            }
+
+            LibC.Signal(SynclinkConstants.InterruptSignal, Marshal.GetFunctionPointerForDelegate(LibC.Interrupt));
+            LibC.SignalInterrupt(SynclinkConstants.InterruptSignal, 1);
+            handlerInstalled = true;
+        }
     }
 
     private bool WasInterrupted() => Marshal.GetLastPInvokeError() == interrupted;

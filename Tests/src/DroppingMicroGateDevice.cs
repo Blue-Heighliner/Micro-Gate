@@ -22,6 +22,12 @@ internal sealed class DroppingMicroGateDevice(IMicroGateDevice inner, Func<HdlcW
 
     public void EnableTransmitter() => inner.EnableTransmitter();
 
+    public MicroGateSignals? ReadSignals() => inner.ReadSignals();
+
+    public MicroGateSignals? WaitSignals(MicroGateSignals current) => inner.WaitSignals(current);
+
+    public void CancelSignalWait() => inner.CancelSignalWait();
+
     public void DisableTransmitter() => inner.DisableTransmitter();
 
     public void Dispose() => inner.Dispose();

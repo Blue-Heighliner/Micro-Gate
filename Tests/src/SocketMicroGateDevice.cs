@@ -66,6 +66,14 @@ internal sealed class SocketMicroGateDevice(Socket socket) : IMicroGateDevice
     {
     }
 
+    public MicroGateSignals? ReadSignals() => null;
+
+    public MicroGateSignals? WaitSignals(MicroGateSignals current) => null;
+
+    public void CancelSignalWait()
+    {
+    }
+
     public void DisableTransmitter()
     {
         try

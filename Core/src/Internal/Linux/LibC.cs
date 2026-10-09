@@ -152,4 +152,50 @@ internal static partial class LibC
     /// <returns>0 on success, or -1 on failure.</returns>
     [LibraryImport("libc", EntryPoint = "tcdrain", SetLastError = true)]
     public static partial int Tcdrain(int fd);
+
+    /// <summary>
+    /// Installs a handler for a signal, per POSIX <c>signal(2)</c>.
+    /// </summary>
+    /// <param name="signal">The signal number.</param>
+    /// <param name="handler">A pointer to the unmanaged handler function.</param>
+    /// <returns>The previous handler, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "signal", SetLastError = true)]
+    public static partial nint Signal(int signal, nint handler);
+
+    /// <summary>
+    /// Sets whether a signal interrupts a blocked system call instead of restarting it, per <c>siginterrupt(3)</c>.
+    /// </summary>
+    /// <param name="signal">The signal number.</param>
+    /// <param name="interrupt">Non-zero to interrupt blocked calls.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    [LibraryImport("libc", EntryPoint = "siginterrupt", SetLastError = true)]
+    public static partial int SignalInterrupt(int signal, int interrupt);
+
+    /// <summary>
+    /// Gets the identifier of the calling thread, per <c>pthread_self(3)</c>.
+    /// </summary>
+    /// <returns>The thread identifier.</returns>
+    [LibraryImport("libc", EntryPoint = "pthread_self")]
+    public static partial nuint ThreadSelf();
+
+    /// <summary>
+    /// Sends a signal to a thread of this process, per <c>pthread_kill(3)</c>.
+    /// </summary>
+    /// <param name="thread">The identifier of a thread that has not exited.</param>
+    /// <param name="signal">The signal number.</param>
+    /// <returns>0 on success, or an error number.</returns>
+    [LibraryImport("libc", EntryPoint = "pthread_kill")]
+    public static partial int ThreadKill(nuint thread, int signal);
+
+    /// <summary>
+    /// The signature of a signal handler.
+    /// </summary>
+    /// <param name="signal">The signal number.</param>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void InterruptHandler(int signal);
+
+    /// <summary>
+    /// Gets the handler installed for the interrupt signal. It does nothing: the signal exists only to make a blocked system call return. It is kept in a static field because the process holds a pointer to it for as long as the signal is registered.
+    /// </summary>
+    public static InterruptHandler Interrupt { get; } = static _ => { };
 }

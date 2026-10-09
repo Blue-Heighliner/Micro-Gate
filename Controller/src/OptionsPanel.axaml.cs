@@ -1,7 +1,7 @@
 namespace BlueHeighliner.MicroGate;
 
 /// <summary>
-/// The port options, shown in an expandable sidebar section: for an HDLC mode the link settings that must match the remote station and, depending on the <see cref="ControllerMode"/>, the transmit and connection settings; for a UART mode the line settings.
+/// The port options, shown in an expandable sidebar section: the disconnect detection setting in every mode, and, for an HDLC mode the link settings that must match the remote station and, depending on the <see cref="ControllerMode"/>, the transmit and connection settings; for a UART mode the line settings.
 /// </summary>
 internal sealed partial class OptionsPanel : UserControl
 {
@@ -88,6 +88,8 @@ internal sealed partial class OptionsPanel : UserControl
             StopBits = StopBitsComboBox.Pick<UartStopBits>(),
             Parity = ParityComboBox.Pick<UartParity>(),
             Loopback = UartLoopbackCheckBox.IsChecked == true,
+            DetectDisconnect = DetectDisconnectCheckBox.IsChecked == true,
+            EnableSignals = true,
         };
     }
 
@@ -155,6 +157,8 @@ internal sealed partial class OptionsPanel : UserControl
             AcknowledgeDelay = acknowledgeDelay,
             TransmitWindow = transmitWindow,
             Loopback = mode == ControllerMode.HdlcPeer && LoopbackCheckBox.IsChecked == true,
+            DetectDisconnect = DetectDisconnectCheckBox.IsChecked == true,
+            EnableSignals = true,
         };
     }
 

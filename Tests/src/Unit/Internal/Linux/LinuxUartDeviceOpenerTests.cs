@@ -43,6 +43,7 @@ public sealed class LinuxUartDeviceOpenerTests
                     && p.Parity == 2)),
             Times.Once);
         native.Verify(x => x.EnableReceiver(7, true), Times.Once);
+        native.Verify(x => x.RaiseSignals(7), Times.Once);
         native.Verify(x => x.EnableTransmitter(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
         native.Verify(x => x.ClearNonBlocking(7), Times.Once);
         native.Verify(x => x.Close(7), Times.Once);

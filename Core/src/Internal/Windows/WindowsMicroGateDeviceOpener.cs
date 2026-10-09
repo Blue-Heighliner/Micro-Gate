@@ -67,6 +67,7 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native, TimeSp
         Check(native.SetParams(handle, parameters), "set the port parameters");
         Check(native.SetIdleMode(handle, MapIdlePattern(options.IdlePattern)), "set the idle pattern");
         Check(native.EnableReceiver(handle, true), "enable the receiver");
+        native.RaiseSignals(handle);
     }
 
     private void Check(uint status, string step)

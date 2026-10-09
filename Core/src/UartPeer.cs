@@ -27,6 +27,16 @@ public interface IUartPeer : IDisposable, IAsyncDisposable
     IObservable<Exception> Exceptions { get; }
 
     /// <summary>
+    /// Gets the modem wires that are active at the most recent reading, or <see cref="MicroGateSignals.None"/> before the first reading, when the device cannot report them, and always when <see cref="UartPeerOptions.EnableSignals"/> is off. Changes are reported as the driver signals them.
+    /// </summary>
+    MicroGateSignals Signals { get; }
+
+    /// <summary>
+    /// Gets a stream of the modem wires, emitting the active wires each time they change (never, unless <see cref="UartPeerOptions.EnableSignals"/> is set), starting with the first reading after the peer is started. Subscribe before calling <c>Start</c> to see that first reading. DCD or DSR going inactive ends the peer when <see cref="UartPeerOptions.DetectDisconnect"/> is set, after the change is emitted here. The stream completes together with <see cref="StateChanged"/>.
+    /// </summary>
+    IObservable<MicroGateSignals> SignalsChanged { get; }
+
+    /// <summary>
     /// Gets the current state of the peer.
     /// </summary>
     UartPeerState State { get; }
@@ -86,6 +96,7 @@ public sealed class UartPeer : IUartPeer
         this.shutdownTimeout = shutdownTimeout ?? TimeSpan.FromSeconds(5);
         StateChanged = Isolate(stateChanged, Report);
         Exceptions = Isolate(exceptions, static _ => { });
+        SignalsChanged = Isolate(signalsChanged, Report);
     }
 
     private readonly IUartDeviceOpener linuxOpener;
@@ -94,6 +105,7 @@ public sealed class UartPeer : IUartPeer
     private readonly Channel<IMemoryOwner<byte>> delivery = Channel.CreateUnbounded<IMemoryOwner<byte>>();
     private readonly Subject<UartPeerState> stateChanged = new();
     private readonly Subject<Exception> exceptions = new();
+    private readonly Subject<MicroGateSignals> signalsChanged = new();
     private readonly Queue<Exception> pendingExceptions = new();
     private readonly Queue<Action> notifications = new();
     private readonly Lock stateLock = new();
@@ -102,6 +114,8 @@ public sealed class UartPeer : IUartPeer
     private readonly int readBufferSize = 4096;
     private readonly int maxWriteSize = 4096;
     private IMicroGateDevice? device;
+    private ISignalWatcher? signalWatcher;
+    private MicroGateSignals signals = MicroGateSignals.None;
     private Task receiveLoopTask = Task.CompletedTask;
     private Task deliveryTask = Task.CompletedTask;
     private Action<IMemoryOwner<byte>>? receiver;
@@ -125,6 +139,21 @@ public sealed class UartPeer : IUartPeer
 
     /// <inheritdoc />
     public IObservable<Exception> Exceptions { get; }
+
+    /// <inheritdoc />
+    public IObservable<MicroGateSignals> SignalsChanged { get; }
+
+    /// <inheritdoc />
+    public MicroGateSignals Signals
+    {
+        get
+        {
+            lock (stateLock)
+            {
+                return signals;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public UartPeerState State
@@ -168,6 +197,10 @@ public sealed class UartPeer : IUartPeer
                 }
 
                 device = opened;
+                if (options.EnableSignals || options.DetectDisconnect)
+                {
+                    signalWatcher = new SignalWatcher(opened, options.DetectDisconnect ? MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady : MicroGateSignals.None, options.EnableSignals ? OnSignalsChanged : null, OnSignalsLost);
+                }
                 receiveLoopTask = Task.Run(ReceiveLoop);
                 deliveryStarted = true;
                 deliveryTask = Task.Run(Deliver);
@@ -333,6 +366,11 @@ public sealed class UartPeer : IUartPeer
         {
         }
 
+        if (signalWatcher is { } watcher)
+        {
+            await watcher.DisposeAsync().ConfigureAwait(false);
+        }
+
         if (transmitterEnabled)
         {
             opened.DisableTransmitter();
@@ -340,6 +378,19 @@ public sealed class UartPeer : IUartPeer
 
         opened.Dispose();
     }
+
+    private void OnSignalsChanged(MicroGateSignals current)
+    {
+        lock (stateLock)
+        {
+            signals = current;
+            notifications.Enqueue(() => signalsChanged.OnNext(current));
+        }
+
+        Notify();
+    }
+
+    private void OnSignalsLost(MicroGateSignals missing) => device?.DisableReceiver();
 
     private void ReceiveLoop()
     {
@@ -464,6 +515,7 @@ public sealed class UartPeer : IUartPeer
 
     private void CompleteStreams()
     {
+        signalsChanged.OnCompleted();
         stateChanged.OnCompleted();
         PublishExceptions();
         exceptions.OnCompleted();

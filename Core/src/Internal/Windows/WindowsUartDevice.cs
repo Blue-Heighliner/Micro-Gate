@@ -42,6 +42,15 @@ internal sealed class WindowsUartDevice(IWindowsNative native, nint handle) : IM
     }
 
     /// <inheritdoc />
+    public MicroGateSignals? ReadSignals() => inner.ReadSignals();
+
+    /// <inheritdoc />
+    public MicroGateSignals? WaitSignals(MicroGateSignals current) => inner.WaitSignals(current);
+
+    /// <inheritdoc />
+    public void CancelSignalWait() => inner.CancelSignalWait();
+
+    /// <inheritdoc />
     public void DisableTransmitter() => inner.DisableTransmitter();
 
     /// <inheritdoc />

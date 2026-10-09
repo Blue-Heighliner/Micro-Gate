@@ -27,6 +27,16 @@ public interface IHdlcPeer : IDisposable, IAsyncDisposable
     IObservable<Exception> Exceptions { get; }
 
     /// <summary>
+    /// Gets the modem wires that were active at the most recent reading, or <see cref="MicroGateSignals.None"/> before the first reading, when the device cannot report them, and always when <see cref="HdlcPeerOptions.EnableSignals"/> is off. Changes are reported as the driver signals them.
+    /// </summary>
+    MicroGateSignals Signals { get; }
+
+    /// <summary>
+    /// Gets a stream of the modem wires, emitting the active wires each time they change (never, unless <see cref="HdlcPeerOptions.EnableSignals"/> is set), starting with the first reading after the peer is started. Subscribe before calling <c>Start</c> to see that first reading. DCD or DSR going inactive ends the connection when <see cref="HdlcPeerOptions.DetectDisconnect"/> is set, after the change is emitted here. The stream completes together with <see cref="StateChanged"/>.
+    /// </summary>
+    IObservable<MicroGateSignals> SignalsChanged { get; }
+
+    /// <summary>
     /// Gets a stream of every frame received on the device, in the order received, parsed but not acted on: it includes the SABM, UA, DISC, DM, FRMR, RR, RNR, and REJ frames two stations use to manage their connection, those addressed to other stations, and frames that could not be parsed. Only pushed while <see cref="HdlcPeerOptions.EnableMonitor"/> is <see langword="true"/>; when it is not, received frames are not even parsed. The stream completes together with <see cref="StateChanged"/>.
     /// </summary>
     /// <remarks>
@@ -104,6 +114,12 @@ public interface IHdlcPeer : IDisposable, IAsyncDisposable
 
 
     /// <summary>
+    /// Closes the peer at once without sending a disconnect, as <see cref="IDisposable.Dispose"/> otherwise would for a connected peer, and releases the device. The remote station is not told: it has to notice the link is gone, from its own timeouts or, if it watches them, from the modem wires dropping when the port closes. The peer ends exactly as if it had been disposed.
+    /// </summary>
+    /// <returns>A <see cref="ValueTask"/> that completes once the peer has been closed.</returns>
+    ValueTask Drop();
+
+    /// <summary>
     /// Sends data to the remote peer as one HDLC information frame. Frames are numbered and kept until the remote peer acknowledges them, and are sent again if it rejects them or does not answer, so data arrives in order and without gaps while the peer stays connected. Only a limited number of frames may be unacknowledged at once; further sends wait for an acknowledgement.
     /// </summary>
     /// <param name="data">The data to send.</param>
@@ -155,6 +171,7 @@ public sealed class HdlcPeer : IHdlcPeer
         this.shutdownTimeout = shutdownTimeout ?? TimeSpan.FromSeconds(5);
         StateChanged = Isolate(stateChanged, Report);
         Exceptions = Isolate(exceptions, static _ => { });
+        SignalsChanged = Isolate(signalsChanged, Report);
         Monitored = Isolate(monitored, Report);
         Transmitted = Isolate(transmitted, Report);
         connectionEstablished.Task.ContinueWith(static task => task.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
@@ -168,6 +185,7 @@ public sealed class HdlcPeer : IHdlcPeer
     private readonly Subject<Exception> exceptions = new();
     private readonly Subject<HdlcFrame> monitored = new();
     private readonly Subject<HdlcFrame> transmitted = new();
+    private readonly Subject<MicroGateSignals> signalsChanged = new();
     private readonly Queue<Exception> pendingExceptions = new();
     private readonly Queue<Action> notifications = new();
     private readonly Lock stateLock = new();
@@ -186,6 +204,8 @@ public sealed class HdlcPeer : IHdlcPeer
     private IHdlcStateMachine? stateMachine;
     private SemaphoreSlim? sendWindow;
     private IMicroGateDevice? device;
+    private ISignalWatcher? signalWatcher;
+    private MicroGateSignals signals = MicroGateSignals.None;
     private Task receiveLoopTask = Task.CompletedTask;
     private Task retransmitTask = Task.CompletedTask;
     private Task deliveryTask = Task.CompletedTask;
@@ -201,6 +221,7 @@ public sealed class HdlcPeer : IHdlcPeer
     private bool transmitterEnabled;
     private bool finished;
     private bool disposed;
+    private bool dropped;
 
     /// <inheritdoc />
     public Action<IMemoryOwner<byte>>? Receiver
@@ -220,6 +241,21 @@ public sealed class HdlcPeer : IHdlcPeer
 
     /// <inheritdoc />
     public IObservable<HdlcFrame> Transmitted { get; }
+
+    /// <inheritdoc />
+    public IObservable<MicroGateSignals> SignalsChanged { get; }
+
+    /// <inheritdoc />
+    public MicroGateSignals Signals
+    {
+        get
+        {
+            lock (stateLock)
+            {
+                return signals;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public HdlcPeerState State
@@ -272,6 +308,10 @@ public sealed class HdlcPeer : IHdlcPeer
                 }
 
                 device = opened;
+                if (options.EnableSignals || options.DetectDisconnect)
+                {
+                    signalWatcher = new SignalWatcher(opened, options.DetectDisconnect ? MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady : MicroGateSignals.None, options.EnableSignals ? OnSignalsChanged : null, OnSignalsLost);
+                }
                 receiveLoopTask = Task.Run(ReceiveLoop);
                 deliveryStarted = true;
                 deliveryTask = Task.Run(Deliver);
@@ -405,10 +445,22 @@ public sealed class HdlcPeer : IHdlcPeer
     public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <inheritdoc />
+    public ValueTask Drop()
+    {
+        lock (stateLock)
+        {
+            dropped = true;
+        }
+
+        return DisposeAsync();
+    }
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         IMicroGateDevice? opened;
         bool fromCallback;
+        bool skipDisconnect;
         lock (stateLock)
         {
             if (disposed)
@@ -419,11 +471,12 @@ public sealed class HdlcPeer : IHdlcPeer
             disposed = true;
             opened = device;
             fromCallback = notifyingThreadId == Environment.CurrentManagedThreadId || insideReceiver.Value;
+            skipDisconnect = dropped;
         }
 
         if (opened is not null)
         {
-            if (Protocol(() => stateMachine?.State) == HdlcConnectionState.Connected)
+            if (!skipDisconnect && Protocol(() => stateMachine?.State) == HdlcConnectionState.Connected)
             {
                 await SendDisconnect(opened).ConfigureAwait(false);
             }
@@ -582,8 +635,26 @@ public sealed class HdlcPeer : IHdlcPeer
             opened.DisableTransmitter();
         }
 
+        if (signalWatcher is { } watcher)
+        {
+            await watcher.DisposeAsync().ConfigureAwait(false);
+        }
+
         opened.Dispose();
     }
+
+    private void OnSignalsChanged(MicroGateSignals current)
+    {
+        lock (stateLock)
+        {
+            signals = current;
+            notifications.Enqueue(() => signalsChanged.OnNext(current));
+        }
+
+        Notify();
+    }
+
+    private void OnSignalsLost(MicroGateSignals missing) => Fail(new IOException($"A required signal went inactive: {missing}."));
 
     private void ValidateSize(int length)
     {
@@ -1119,6 +1190,7 @@ public sealed class HdlcPeer : IHdlcPeer
 
     private void CompleteStreams()
     {
+        signalsChanged.OnCompleted();
         monitored.OnCompleted();
         transmitted.OnCompleted();
         stateChanged.OnCompleted();

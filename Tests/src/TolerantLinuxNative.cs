@@ -16,6 +16,16 @@ internal sealed class TolerantLinuxNative(ILinuxNative inner) : ILinuxNative
 
     public int ClearNonBlocking(int fileDescriptor) => inner.ClearNonBlocking(fileDescriptor);
 
+    public int GetSignals(int fileDescriptor) => -1;
+
+    public int RaiseSignals(int fileDescriptor) => 0;
+
+    public int WaitSignalEvents(int fileDescriptor, int events) => -1;
+
+    public nuint CurrentThread() => 0;
+
+    public int InterruptThread(nuint thread) => 0;
+
     public int SelectHdlcLineDiscipline(int fileDescriptor) => 0;
 
     public int SelectTtyLineDiscipline(int fileDescriptor) => 0;

@@ -8,7 +8,13 @@ namespace BlueHeighliner.MicroGate.Linux;
 internal sealed class LinuxMicroGateDevice(ILinuxNative native, int fileDescriptor) : IMicroGateDevice
 {
     private readonly int pollIntervalMilliseconds = 100;
+    private readonly Lock waitLock = new();
+    private readonly int signalFallbackIntervalMilliseconds = 100;
+    private readonly MicroGateSignals inputs = MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend;
     private int receiverDisabled;
+    private int signalWaitCancelled;
+    private nuint waitingThread;
+    private bool waiting;
 
     /// <inheritdoc />
     public int Read(byte[] buffer)
@@ -61,8 +67,95 @@ internal sealed class LinuxMicroGateDevice(ILinuxNative native, int fileDescript
     }
 
     /// <inheritdoc />
+    public MicroGateSignals? ReadSignals()
+    {
+        int signals = native.GetSignals(fileDescriptor);
+        if (signals < 0)
+        {
+            return null;
+        }
+
+        MicroGateSignals result = MicroGateSignals.None;
+        result |= (signals & SynclinkConstants.ModemCarrierDetect) != 0 ? MicroGateSignals.DataCarrierDetect : MicroGateSignals.None;
+        result |= (signals & SynclinkConstants.ModemDataSetReady) != 0 ? MicroGateSignals.DataSetReady : MicroGateSignals.None;
+        result |= (signals & SynclinkConstants.ModemClearToSend) != 0 ? MicroGateSignals.ClearToSend : MicroGateSignals.None;
+        result |= (signals & SynclinkConstants.ModemDataTerminalReady) != 0 ? MicroGateSignals.DataTerminalReady : MicroGateSignals.None;
+        result |= (signals & SynclinkConstants.ModemRequestToSend) != 0 ? MicroGateSignals.RequestToSend : MicroGateSignals.None;
+        return result;
+    }
+
+    /// <inheritdoc />
+    public MicroGateSignals? WaitSignals(MicroGateSignals current)
+    {
+        while (Volatile.Read(ref signalWaitCancelled) == 0)
+        {
+            int result;
+            lock (waitLock)
+            {
+                waitingThread = native.CurrentThread();
+                waiting = true;
+            }
+
+            try
+            {
+                result = Volatile.Read(ref signalWaitCancelled) != 0 ? 0 : native.WaitSignalEvents(fileDescriptor, current.FlipEvents);
+            }
+            finally
+            {
+                lock (waitLock)
+                {
+                    waiting = false;
+                }
+            }
+
+            if (result > 0)
+            {
+                MicroGateSignals? reading = ReadSignals();
+                if (reading is not { } signals || (signals & inputs) != (current & inputs))
+                {
+                    return reading;
+                }
+            }
+            else if (result < 0)
+            {
+                return PollSignals(current & inputs);
+            }
+        }
+
+        return null;
+    }
+
+    /// <inheritdoc />
+    public void CancelSignalWait()
+    {
+        Volatile.Write(ref signalWaitCancelled, 1);
+        lock (waitLock)
+        {
+            if (waiting)
+            {
+                native.InterruptThread(waitingThread);
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public void DisableTransmitter() => native.EnableTransmitter(fileDescriptor, false);
 
     /// <inheritdoc />
     public void Dispose() => native.Close(fileDescriptor);
+
+    private MicroGateSignals? PollSignals(MicroGateSignals watched)
+    {
+        while (Volatile.Read(ref signalWaitCancelled) == 0)
+        {
+            Thread.Sleep(signalFallbackIntervalMilliseconds);
+            MicroGateSignals? reading = ReadSignals();
+            if (reading is not { } signals || (signals & inputs) != watched)
+            {
+                return reading;
+            }
+        }
+
+        return null;
+    }
 }

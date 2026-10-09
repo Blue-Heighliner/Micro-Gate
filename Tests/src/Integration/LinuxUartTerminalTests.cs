@@ -119,4 +119,28 @@ public sealed class LinuxUartTerminalTests
             File.Delete(file);
         }
     }
+
+    [Fact]
+    public void Signals_OnPseudoTerminal_AreReportedAsUnavailable()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        using PseudoTerminal? terminal = PseudoTerminal.Create();
+        if (terminal is null)
+        {
+            return;
+        }
+
+        LinuxNative native = new();
+        int descriptor = native.Open(terminal.SlavePath);
+
+        Assert.True(native.GetSignals(descriptor) < 0);
+        Assert.True(native.RaiseSignals(descriptor) < 0);
+        Assert.Null(new LinuxMicroGateDevice(native, descriptor).ReadSignals());
+
+        native.Close(descriptor);
+    }
 }

@@ -53,6 +53,8 @@ internal sealed class LinuxUartDeviceOpener(ILinuxNative native) : IUartDeviceOp
         };
         Check(native.SetParams(fileDescriptor, parameters), "set the port parameters", path);
         Check(native.EnableReceiver(fileDescriptor, true), "enable the receiver", path);
+        // Best effort like the interface: a driver that already raises the outputs on open, or cannot, is still usable.
+        native.RaiseSignals(fileDescriptor);
         Check(native.ClearNonBlocking(fileDescriptor), "make the device blocking", path);
     }
 

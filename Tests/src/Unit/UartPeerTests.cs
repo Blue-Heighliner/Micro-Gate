@@ -48,6 +48,7 @@ public sealed class UartPeerTests : IDisposable
         Assert.Equal(UartStopBits.One, captured.StopBits);
         Assert.Equal(UartParity.None, captured.Parity);
         Assert.False(captured.Loopback);
+        Assert.True(captured.DetectDisconnect);
     }
 
     [Theory]
@@ -361,6 +362,155 @@ public sealed class UartPeerTests : IDisposable
 
         harness.Device.Verify(x => x.Dispose(), Times.Once);
         Assert.Equal(UartPeerState.Closed, peer.State);
+    }
+
+    [Fact]
+    public async Task Signals_AreReportedToAnEarlyObserverAndExposed()
+    {
+        new SignalSource(MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend).Attach(harness.Device);
+        UartPeer peer = harness.CreatePeer();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.SignalsChanged.Subscribe(signals);
+
+        await peer.Start("port", new UartPeerOptions { EnableSignals = true });
+
+        Assert.Equal(MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend, await signals.Next());
+        Assert.Equal(MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend, peer.Signals);
+        Assert.Equal(UartPeerState.Open, peer.State);
+        await peer.DisposeAsync();
+        await signals.Completed.WaitAsync(timeout);
+    }
+
+    [Fact]
+    public async Task DetectDisconnect_WhenCarrierDetectOrDataSetReadyIsLost_ClosesThePeer()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend);
+        source.Attach(harness.Device);
+        UartPeer peer = harness.CreatePeer();
+        TestObserver<UartPeerState> states = new();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.StateChanged.Subscribe(states);
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", new UartPeerOptions { EnableSignals = true });
+        await signals.Next();
+
+        source.Set(MicroGateSignals.ClearToSend);
+
+        Assert.Equal(MicroGateSignals.ClearToSend, await signals.Next());
+        await states.Completed.WaitAsync(timeout);
+        Assert.Equal([UartPeerState.Open, UartPeerState.Closed], states.Seen);
+        await peer.DisposeAsync();
+        harness.Device.Verify(x => x.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task DetectDisconnect_IgnoresALostClearToSend()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend);
+        source.Attach(harness.Device);
+        await using UartPeer peer = harness.CreatePeer();
+        await peer.Start("port");
+        await Task.Delay(50);
+
+        source.Set(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        await Task.Delay(150);
+
+        Assert.Equal(UartPeerState.Open, peer.State);
+    }
+
+    [Fact]
+    public async Task DetectDisconnect_WhenTheSignalsWereNeverActive_KeepsThePeerOpen()
+    {
+        new SignalSource().Attach(harness.Device);
+        await using UartPeer peer = harness.CreatePeer();
+        await peer.Start("port");
+
+        await Task.Delay(150);
+
+        Assert.Equal(UartPeerState.Open, peer.State);
+    }
+
+    [Fact]
+    public async Task DetectDisconnect_WhenOff_KeepsThePeerOpenThroughALostSignal()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        source.Attach(harness.Device);
+        await using UartPeer peer = harness.CreatePeer();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", new UartPeerOptions { DetectDisconnect = false, EnableSignals = true });
+        await signals.Next();
+
+        source.Set(MicroGateSignals.None);
+
+        Assert.Equal(MicroGateSignals.None, await signals.Next());
+        await Task.Delay(100);
+        Assert.Equal(UartPeerState.Open, peer.State);
+    }
+
+    [Fact]
+    public async Task EnableSignals_WhenOff_NeverReportsSignalsButStillDetectsDisconnect()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        source.Attach(harness.Device);
+        UartPeer peer = harness.CreatePeer();
+        TestObserver<UartPeerState> states = new();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.StateChanged.Subscribe(states);
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port");
+        await Task.Delay(100);
+
+        source.Set(MicroGateSignals.None);
+
+        await states.Completed.WaitAsync(timeout);
+        Assert.Equal([UartPeerState.Open, UartPeerState.Closed], states.Seen);
+        Assert.Empty(signals.Seen);
+        Assert.Equal(MicroGateSignals.None, peer.Signals);
+        await peer.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task EnableSignals_WhenOffAndDetectDisconnectOff_DoesNotWatchTheWiresAtAll()
+    {
+        new SignalSource(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady).Attach(harness.Device);
+        await using UartPeer peer = harness.CreatePeer();
+
+        await peer.Start("port", new UartPeerOptions { DetectDisconnect = false });
+        await Task.Delay(100);
+
+        harness.Device.Verify(x => x.ReadSignals(), Times.Never);
+        harness.Device.Verify(x => x.WaitSignals(It.IsAny<MicroGateSignals>()), Times.Never);
+        Assert.Equal(MicroGateSignals.None, peer.Signals);
+    }
+
+    [Fact]
+    public async Task EnableSignals_WhenOnWithoutDetectDisconnect_ReportsButNeverCloses()
+    {
+        SignalSource source = new(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady);
+        source.Attach(harness.Device);
+        await using UartPeer peer = harness.CreatePeer();
+        TestObserver<MicroGateSignals> signals = new();
+        peer.SignalsChanged.Subscribe(signals);
+        await peer.Start("port", new UartPeerOptions { EnableSignals = true, DetectDisconnect = false });
+        await signals.Next();
+
+        source.Set(MicroGateSignals.None);
+
+        Assert.Equal(MicroGateSignals.None, await signals.Next());
+        Assert.Equal(UartPeerState.Open, peer.State);
+    }
+
+    [Fact]
+    public async Task Signals_WhenTheDeviceCannotReportThem_StayNone()
+    {
+        await using UartPeer peer = harness.CreatePeer();
+        await peer.Start("port", new UartPeerOptions { EnableSignals = true });
+
+        await Task.Delay(100);
+
+        Assert.Equal(MicroGateSignals.None, peer.Signals);
+        Assert.Equal(UartPeerState.Open, peer.State);
     }
 
     [Fact]

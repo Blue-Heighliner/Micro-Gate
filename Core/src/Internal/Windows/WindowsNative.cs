@@ -46,6 +46,37 @@ internal interface IWindowsNative
     uint SetOption(nint handle, uint optionId, uint value);
 
     /// <summary>
+    /// Reads the serial control and status signals.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="signals">Receives the active signals as <c>SerialSignal_*</c> bits.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint GetSignals(nint handle, out byte signals);
+
+    /// <summary>
+    /// Blocks until one of the given modem wire events occurs, or <see cref="CancelSignalWait"/> is called.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <param name="mask">The <c>MgslEvent_*</c> events of interest.</param>
+    /// <param name="events">Receives the events that occurred, or zero if the wait was cancelled.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint WaitSignalEvents(nint handle, uint mask, out uint events);
+
+    /// <summary>
+    /// Cancels a blocked <see cref="WaitSignalEvents"/> issued from another thread.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint CancelSignalWait(nint handle);
+
+    /// <summary>
+    /// Turns on the data terminal ready and request to send outputs, which tell the remote station this one is present.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint RaiseSignals(nint handle);
+
+    /// <summary>
     /// Enables or disables the receiver. Disabling cancels any blocked read.
     /// </summary>
     /// <param name="handle">The device handle.</param>
@@ -130,6 +161,48 @@ internal sealed class WindowsNative : IWindowsNative
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]
     public uint SetOption(nint handle, uint optionId, uint value) => Mghdlc.MgslSetOption(handle, optionId, value);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint GetSignals(nint handle, out byte signals) => Mghdlc.MgslGetSerialSignals(handle, out signals);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint WaitSignalEvents(nint handle, uint mask, out uint events)
+    {
+        events = 0;
+        nint overlapped = Marshal.AllocHGlobal(Marshal.SizeOf<NativeOverlapped>());
+        nint received = Marshal.AllocHGlobal(sizeof(uint));
+        nint signal = Kernel32.CreateEvent(0, 1, 0, 0);
+        try
+        {
+            Marshal.WriteInt32(received, 0);
+            Marshal.StructureToPtr(new NativeOverlapped { EventHandle = signal }, overlapped, false);
+            uint status = Mghdlc.MgslWaitEvent(handle, mask, received, overlapped);
+            if (status == MghdlcConstants.IoPending)
+            {
+                Kernel32.WaitForSingleObject(signal, uint.MaxValue);
+                status = MghdlcConstants.Success;
+            }
+
+            events = (uint)Marshal.ReadInt32(received);
+            return status;
+        }
+        finally
+        {
+            Kernel32.CloseHandle(signal);
+            Marshal.FreeHGlobal(received);
+            Marshal.FreeHGlobal(overlapped);
+        }
+    }
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint CancelSignalWait(nint handle) => Mghdlc.MgslCancelWaitEvent(handle);
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint RaiseSignals(nint handle) => Mghdlc.MgslSetSerialSignals(handle, (byte)(MghdlcConstants.SignalDataTerminalReady | MghdlcConstants.SignalRequestToSend));
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]

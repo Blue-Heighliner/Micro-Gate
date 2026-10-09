@@ -226,3 +226,14 @@ await peer.Send("Hello\r\n"u8.ToArray());
 
 The remote station must use the same baud rate, data bits, stop bits and parity. The bytes are sent and received exactly as given, with no framing.
 
+
+## Detect a lost remote station from the wire signals
+
+```csharp
+using BlueHeighliner.MicroGate;
+
+await using IUartPeer peer = new UartPeerFactory().Create();
+await peer.Start("ttyUSB0", new UartPeerOptions { DetectDisconnect = true, EnableSignals = true });
+```
+
+Detection is on by default (`DetectDisconnect = true`, shown for clarity). Once DCD and DSR have both been seen active, either going inactive closes the peer, which `StateChanged` reports; the same option on `HdlcPeerOptions` makes the peer `Disconnected`. `EnableSignals = true` additionally publishes the wires on `SignalsChanged` and `Signals`; detection works without it. It needs a cable that carries the wires and a remote station that raises its outputs, and `DetectDisconnect = false` turns it off.

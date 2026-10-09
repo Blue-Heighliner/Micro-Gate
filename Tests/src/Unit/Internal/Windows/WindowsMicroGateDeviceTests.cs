@@ -127,4 +127,91 @@ public sealed class WindowsMicroGateDeviceTests
         Assert.Equal(0, device.Read(new byte[8]));
         native.Verify(x => x.Read(It.IsAny<nint>(), It.IsAny<byte[]>()), Times.Never);
     }
+
+    [Theory]
+    [InlineData((byte)0x00, MicroGateSignals.None)]
+    [InlineData((byte)0x01, MicroGateSignals.DataCarrierDetect)]
+    [InlineData((byte)0x40, MicroGateSignals.DataSetReady)]
+    [InlineData((byte)0x10, MicroGateSignals.ClearToSend)]
+    [InlineData((byte)0x51, MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend)]
+    [InlineData((byte)0x80, MicroGateSignals.DataTerminalReady)]
+    [InlineData((byte)0x20, MicroGateSignals.RequestToSend)]
+    [InlineData((byte)0xF1, MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend | MicroGateSignals.DataTerminalReady | MicroGateSignals.RequestToSend)]
+    [InlineData((byte)0x0E, MicroGateSignals.None)]
+    public void ReadSignals_MapsTheWiresAndIgnoresTheRest(byte bits, MicroGateSignals expected)
+    {
+        byte signals = bits;
+        native.Setup(x => x.GetSignals(9, out signals)).Returns(0u);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        Assert.Equal(expected, device.ReadSignals());
+    }
+
+    [Fact]
+    public void ReadSignals_WhenTheQueryFails_ReturnsNull()
+    {
+        byte signals = 0;
+        native.Setup(x => x.GetSignals(9, out signals)).Returns(6u);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        Assert.Null(device.ReadSignals());
+    }
+
+    [Fact]
+    public void UartDevice_ReadSignals_DelegatesToTheFrameDevice()
+    {
+        byte signals = 0x40;
+        native.Setup(x => x.GetSignals(9, out signals)).Returns(0u);
+        WindowsUartDevice device = new(native.Object, 9);
+
+        Assert.Equal(MicroGateSignals.DataSetReady, device.ReadSignals());
+    }
+
+    [Fact]
+    public void WaitSignals_WaitsForTheOppositeOfEachInputWireThenReadsThem()
+    {
+        uint events = 0x02;
+        byte signals = 0x01 | 0x40 | 0x10;
+        native.Setup(x => x.WaitSignalEvents(9, 0x02 | 0x08 | 0x10, out events)).Returns(0u);
+        native.Setup(x => x.GetSignals(9, out signals)).Returns(0u);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        MicroGateSignals? reading = device.WaitSignals(MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend);
+
+        Assert.Equal(MicroGateSignals.DataCarrierDetect | MicroGateSignals.DataSetReady | MicroGateSignals.ClearToSend, reading);
+    }
+
+    [Fact]
+    public void WaitSignals_WhenTheWaitIsCancelled_ReturnsNull()
+    {
+        WindowsMicroGateDevice device = new(native.Object, 9);
+        uint none = 0;
+        native.Setup(x => x.WaitSignalEvents(9, It.IsAny<uint>(), out none)).Returns(() =>
+        {
+            device.CancelSignalWait();
+            return 0u;
+        });
+
+        Assert.Null(device.WaitSignals(MicroGateSignals.None));
+
+        native.Verify(x => x.CancelSignalWait(9), Times.Once);
+    }
+
+    [Fact]
+    public async Task WaitSignals_WhenTheEventsAreUnsupported_PollsTheWiresUntilCancelled()
+    {
+        uint none = 0;
+        byte signals = 0x00;
+        native.Setup(x => x.WaitSignalEvents(9, It.IsAny<uint>(), out none)).Returns(1u);
+        native.Setup(x => x.GetSignals(9, out signals)).Returns(0u);
+        WindowsMicroGateDevice device = new(native.Object, 9);
+        Task<MicroGateSignals?> wait = Task.Run(() => device.WaitSignals(MicroGateSignals.None));
+        await Task.Delay(350);
+
+        device.CancelSignalWait();
+
+        Assert.Null(await wait.WaitAsync(TimeSpan.FromSeconds(10)));
+        native.Verify(x => x.WaitSignalEvents(9, It.IsAny<uint>(), out none), Times.Once);
+        native.Verify(x => x.GetSignals(9, out signals), Times.AtLeast(2));
+    }
 }
