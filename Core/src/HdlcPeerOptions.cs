@@ -73,9 +73,9 @@ public sealed record HdlcPeerOptions
     public int? MaxRetransmissions { get; init; } = 21;
 
     /// <summary>
-    /// Gets the maximum number of information frames that may be sent before one is acknowledged, from 1 to 7 (the most a modulo-8 HDLC sequence number space allows). Defaults to 7. Local only: HDLC never negotiates it, so the remote station's window is independent.
+    /// Gets the maximum number of information frames that may be sent before one is acknowledged, from 1 to 7 (the most a modulo-8 HDLC sequence number space allows). Defaults to 1, the window the MicroGate Windows link layer uses. Local only: HDLC never negotiates it, so the remote station's window is independent.
     /// </summary>
-    public int TransmitWindow { get; init; } = 7;
+    public int TransmitWindow { get; init; } = 1;
 
     /// <summary>
     /// Gets a value indicating whether the device's internal loopback mode is enabled, looping transmitted data back to the receiver internally instead of sending it on the line, for self-test without a remote peer. Defaults to <see langword="false"/>. Local only; nothing reaches the remote station while it is enabled.

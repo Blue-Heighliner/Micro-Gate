@@ -87,7 +87,11 @@ public sealed class LinuxMicroGateDeviceOpenerTests
                     && p.CrcType == 2
                     && p.AddressFilter == 0xFF
                     && p.PreambleLength == 0
-                    && p.Preamble == 0)),
+                    && p.Preamble == 0
+                    && p.DataRate == 4800
+                    && p.DataBits == 8
+                    && p.StopBits == 1
+                    && p.Parity == 0)),
             Times.Once);
         native.Verify(x => x.SetTransmitIdle(7, 0), Times.Once);
     }

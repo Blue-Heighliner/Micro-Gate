@@ -49,6 +49,10 @@ internal sealed class LinuxMicroGateDeviceOpener(ILinuxNative native) : IMicroGa
             AddressFilter = SynclinkConstants.AddressFilterDisabled,
             PreambleLength = MapPreambleLength(options.PreambleLength),
             Preamble = MapPreamblePattern(options.PreamblePattern),
+            DataRate = (nuint)options.Link.ClockSpeed,
+            DataBits = 8,
+            StopBits = 1,
+            Parity = 0,
         };
         Check(native.SetParams(fileDescriptor, parameters), "set the port parameters", path);
         Check(native.SetTransmitIdle(fileDescriptor, MapIdlePattern(options.IdlePattern)), "set the idle pattern", path);

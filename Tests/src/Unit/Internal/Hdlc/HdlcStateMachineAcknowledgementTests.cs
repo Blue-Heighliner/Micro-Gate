@@ -13,7 +13,7 @@ public sealed class HdlcStateMachineAcknowledgementTests
     [Fact]
     public void Receive_InSequenceInformation_WaitsForTheNextInformationFrameToAcknowledge()
     {
-        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions());
+        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions { TransmitWindow = 7 });
 
         HdlcReceiveResult delivered = remote.Receive(local.CreateInformation(new byte[] { 1 }));
         HdlcWireFrame piggybacked = HdlcWireFrame.Parse(remote.CreateInformation(new byte[] { 2 }));
@@ -27,7 +27,7 @@ public sealed class HdlcStateMachineAcknowledgementTests
     [Fact]
     public void CreateAcknowledgement_WhenNothingCarriedTheAcknowledgement_ProducesAnRrWithTheReceiveSequence()
     {
-        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions());
+        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions { TransmitWindow = 7 });
         remote.Receive(local.CreateInformation(new byte[] { 1 }));
 
         HdlcWireFrame acknowledgement = HdlcWireFrame.Parse(remote.CreateAcknowledgement());
@@ -42,7 +42,7 @@ public sealed class HdlcStateMachineAcknowledgementTests
     [Fact]
     public void Receive_InformationWithThePollBitSet_IsAcknowledgedAtOnceWithAFinalResponse()
     {
-        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions());
+        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions { TransmitWindow = 7 });
         HdlcWireFrame polled = new() { Address = 0x12, Kind = HdlcWireFrameKind.Information, PollFinal = true, SendSequence = 0, ReceiveSequence = 0, Payload = new byte[] { 1 } };
 
         HdlcReceiveResult result = remote.Receive(polled.ToArray());
@@ -57,7 +57,7 @@ public sealed class HdlcStateMachineAcknowledgementTests
     [Fact]
     public void Receive_AGapInTheSequence_IsRejectedAtOnce()
     {
-        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions());
+        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions { TransmitWindow = 7 });
         local.CreateInformation(new byte[] { 1 });
 
         HdlcReceiveResult result = remote.Receive(local.CreateInformation(new byte[] { 2 }));
@@ -68,7 +68,7 @@ public sealed class HdlcStateMachineAcknowledgementTests
     [Fact]
     public void Receive_FourInformationFramesWaitingForAnAcknowledgement_AreAcknowledgedAtOnce()
     {
-        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions());
+        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions { TransmitWindow = 7 });
 
         List<HdlcReceiveResult> results = [.. Enumerable.Range(0, 4).Select(i => remote.Receive(local.CreateInformation(new byte[] { (byte)i })))];
 
@@ -91,7 +91,7 @@ public sealed class HdlcStateMachineAcknowledgementTests
     [Fact]
     public void CreateRetransmission_CarriesTheCurrentReceiveSequenceSoItAcknowledgesToo()
     {
-        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions());
+        (HdlcStateMachine local, HdlcStateMachine remote) = ConnectedPair(new HdlcPeerOptions { TransmitWindow = 7 });
         remote.CreateInformation(new byte[] { 9 });
         remote.Receive(local.CreateInformation(new byte[] { 1 }));
 

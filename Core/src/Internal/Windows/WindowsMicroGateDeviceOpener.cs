@@ -63,6 +63,10 @@ internal sealed class WindowsMicroGateDeviceOpener(IWindowsNative native, TimeSp
             Addr = MghdlcConstants.AddressFilterDisabled,
             PreambleLength = MapPreambleLength(options.PreambleLength),
             PreamblePattern = MapPreamblePattern(options.PreamblePattern),
+            DataRate = (uint)options.Link.ClockSpeed,
+            DataBits = 8,
+            StopBits = 1,
+            Parity = 0,
         };
         Check(native.SetParams(handle, parameters), "set the port parameters");
         Check(native.SetIdleMode(handle, MapIdlePattern(options.IdlePattern)), "set the idle pattern");

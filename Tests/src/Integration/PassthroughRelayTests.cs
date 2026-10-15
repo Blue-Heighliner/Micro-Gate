@@ -3,7 +3,7 @@ namespace BlueHeighliner.MicroGate;
 public sealed class PassthroughRelayTests : IAsyncLifetime
 {
     private readonly TimeSpan timeout = TimeSpan.FromSeconds(10);
-    private readonly HdlcPeerOptions endpoint = new() { RetryInterval = TimeSpan.FromMilliseconds(200) };
+    private readonly HdlcPeerOptions endpoint = new() { RetryInterval = TimeSpan.FromMilliseconds(200), TransmitWindow = 7 };
     private readonly HdlcPeerOptions relay = new() { EnableMonitor = true };
     private HdlcPeer left = null!;
     private HdlcPeer right = null!;

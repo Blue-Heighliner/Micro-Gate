@@ -4,7 +4,7 @@ internal sealed class DeviceHarness : IDisposable
 {
     public DeviceHarness(HdlcPeerOptions? options = null)
     {
-        Options = options ?? new HdlcPeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.Zero };
+        Options = options ?? new HdlcPeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, AcknowledgeDelay = TimeSpan.Zero, TransmitWindow = 7 };
 
         Device
             .Setup(x => x.Read(It.IsAny<byte[]>()))

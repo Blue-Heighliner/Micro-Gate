@@ -110,7 +110,11 @@ public sealed class WindowsMicroGateDeviceOpenerTests
                     && p.CrcType == 2
                     && p.Addr == 0xFF
                     && p.PreambleLength == 0
-                    && p.PreamblePattern == 0)),
+                    && p.PreamblePattern == 0
+                    && p.DataRate == 4800
+                    && p.DataBits == 8
+                    && p.StopBits == 1
+                    && p.Parity == 0)),
             Times.Once);
         native.Verify(x => x.SetIdleMode(9, 0u), Times.Once);
     }

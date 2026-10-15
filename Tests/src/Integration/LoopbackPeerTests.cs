@@ -2,8 +2,8 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class LoopbackPeerTests : IAsyncLifetime
 {
-    private readonly HdlcPeerOptions requesting = new() { RetryInterval = TimeSpan.FromMilliseconds(200) };
-    private readonly HdlcPeerOptions passive = new() { RetryInterval = null };
+    private readonly HdlcPeerOptions requesting = new() { RetryInterval = TimeSpan.FromMilliseconds(200), TransmitWindow = 7 };
+    private readonly HdlcPeerOptions passive = new() { RetryInterval = null, TransmitWindow = 7 };
     private readonly TimeSpan timeout = TimeSpan.FromSeconds(10);
     private HdlcPeer first = null!;
     private HdlcPeer second = null!;

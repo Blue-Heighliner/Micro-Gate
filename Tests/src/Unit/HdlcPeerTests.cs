@@ -2,7 +2,7 @@ namespace BlueHeighliner.MicroGate;
 
 public sealed class HdlcPeerTests : IDisposable
 {
-    private readonly DeviceHarness harness = new(new HdlcPeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null });
+    private readonly DeviceHarness harness = new(new HdlcPeerOptions { RetryInterval = TimeSpan.FromMinutes(1), RetransmitInterval = null, TransmitWindow = 7 });
     private readonly TimeSpan timeout = TimeSpan.FromSeconds(5);
 
     public void Dispose() => harness.Dispose();
@@ -664,7 +664,7 @@ public sealed class HdlcPeerTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(1), captured.RetransmitInterval);
         Assert.Equal(21, captured.MaxRetransmissions);
         Assert.False(captured.DisablePollFinalBit);
-        Assert.Equal(7, captured.TransmitWindow);
+        Assert.Equal(1, captured.TransmitWindow);
         Assert.Equal(1500, captured.MaxInfoField);
         Assert.Equal(HdlcEncoding.Nrz, captured.Link.Encoding);
         Assert.Equal(HdlcCrc.Crc32Ccitt, captured.Link.Crc);
