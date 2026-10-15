@@ -59,6 +59,7 @@ public sealed class LinuxNativeTests : IDisposable
         Assert.True(native.EnableTransmitter(descriptor, false) < 0);
         Assert.True(native.GetSignals(descriptor) < 0);
         Assert.True(native.RaiseSignals(descriptor) < 0);
+        Assert.True(native.LowerSignals(descriptor) < 0);
 
         native.Close(descriptor);
     }

@@ -156,6 +156,13 @@ internal interface ILinuxNative
     /// <param name="fileDescriptor">The file descriptor to configure.</param>
     /// <returns>0 on success, or -1 on failure.</returns>
     int RaiseSignals(int fileDescriptor);
+
+    /// <summary>
+    /// Turns off the data terminal ready and request to send outputs, which tells the remote station this one has gone.
+    /// </summary>
+    /// <param name="fileDescriptor">The file descriptor to configure.</param>
+    /// <returns>0 on success, or -1 on failure.</returns>
+    int LowerSignals(int fileDescriptor);
 }
 
 /// <summary>
@@ -359,6 +366,13 @@ internal sealed class LinuxNative : ILinuxNative
     {
         int signals = SynclinkConstants.ModemDataTerminalReady | SynclinkConstants.ModemRequestToSend;
         return LibC.Ioctl(fileDescriptor, SynclinkConstants.RaiseModemSignals, ref signals);
+    }
+
+    /// <inheritdoc />
+    public int LowerSignals(int fileDescriptor)
+    {
+        int signals = SynclinkConstants.ModemDataTerminalReady | SynclinkConstants.ModemRequestToSend;
+        return LibC.Ioctl(fileDescriptor, SynclinkConstants.LowerModemSignals, ref signals);
     }
 
     /// <inheritdoc />

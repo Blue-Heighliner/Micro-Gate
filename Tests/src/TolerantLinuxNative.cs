@@ -20,6 +20,8 @@ internal sealed class TolerantLinuxNative(ILinuxNative inner) : ILinuxNative
 
     public int RaiseSignals(int fileDescriptor) => 0;
 
+    public int LowerSignals(int fileDescriptor) => 0;
+
     public int WaitSignalEvents(int fileDescriptor, int events) => -1;
 
     public nuint CurrentThread() => 0;

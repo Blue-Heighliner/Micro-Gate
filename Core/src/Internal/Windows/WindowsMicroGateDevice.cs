@@ -102,7 +102,12 @@ internal sealed class WindowsMicroGateDevice(IWindowsNative native, nint handle)
     }
 
     /// <inheritdoc />
-    public void Dispose() => native.Close(handle);
+    public void Dispose()
+    {
+        // The driver leaves the outputs as they were when the handle closes, so without this the remote station never sees this one go.
+        native.LowerSignals(handle);
+        native.Close(handle);
+    }
 
     private MicroGateSignals? PollSignals(MicroGateSignals watched)
     {

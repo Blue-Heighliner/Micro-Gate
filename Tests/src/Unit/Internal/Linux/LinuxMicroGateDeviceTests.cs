@@ -59,6 +59,19 @@ public sealed class LinuxMicroGateDeviceTests
     }
 
     [Fact]
+    public void Dispose_LowersSignalsBeforeClosing()
+    {
+        List<string> calls = [];
+        native.Setup(x => x.LowerSignals(7)).Callback(() => calls.Add("lower"));
+        native.Setup(x => x.Close(7)).Callback(() => calls.Add("close"));
+        LinuxMicroGateDevice device = new(native.Object, 7);
+
+        device.Dispose();
+
+        Assert.Equal(["lower", "close"], calls);
+    }
+
+    [Fact]
     public void Write_UsesTheFrameArrayWithoutCopyingWhenItIsExact()
     {
         byte[] frame = [1, 2];

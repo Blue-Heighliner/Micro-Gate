@@ -66,6 +66,19 @@ public sealed class WindowsMicroGateDeviceTests
     }
 
     [Fact]
+    public void Dispose_LowersSignalsBeforeClosing()
+    {
+        List<string> calls = [];
+        native.Setup(x => x.LowerSignals(9)).Callback(() => calls.Add("lower"));
+        native.Setup(x => x.Close(9)).Callback(() => calls.Add("close"));
+        WindowsMicroGateDevice device = new(native.Object, 9);
+
+        device.Dispose();
+
+        Assert.Equal(["lower", "close"], calls);
+    }
+
+    [Fact]
     public void DisableReceiver_AlsoCancelsBlockedRead()
     {
         WindowsMicroGateDevice device = new(native.Object, 9);

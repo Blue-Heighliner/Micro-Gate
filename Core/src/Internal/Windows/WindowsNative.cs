@@ -77,6 +77,13 @@ internal interface IWindowsNative
     uint RaiseSignals(nint handle);
 
     /// <summary>
+    /// Turns off the data terminal ready and request to send outputs, which tells the remote station this one has gone.
+    /// </summary>
+    /// <param name="handle">The device handle.</param>
+    /// <returns>0 on success, or a Win32 error code.</returns>
+    uint LowerSignals(nint handle);
+
+    /// <summary>
     /// Enables or disables the receiver. Disabling cancels any blocked read.
     /// </summary>
     /// <param name="handle">The device handle.</param>
@@ -203,6 +210,10 @@ internal sealed class WindowsNative : IWindowsNative
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]
     public uint RaiseSignals(nint handle) => Mghdlc.MgslSetSerialSignals(handle, (byte)(MghdlcConstants.SignalDataTerminalReady | MghdlcConstants.SignalRequestToSend));
+
+    /// <inheritdoc />
+    [SupportedOSPlatform("windows")]
+    public uint LowerSignals(nint handle) => Mghdlc.MgslSetSerialSignals(handle, 0);
 
     /// <inheritdoc />
     [SupportedOSPlatform("windows")]

@@ -198,6 +198,11 @@ internal static class SynclinkConstants
     public static readonly nuint RaiseModemSignals = 0x5416;
 
     /// <summary>
+    /// The <c>TIOCMBIC</c> request that turns off the modem output wires named in its argument.
+    /// </summary>
+    public static readonly nuint LowerModemSignals = 0x5417;
+
+    /// <summary>
     /// The <c>TIOCM_DTR</c> bit: the data terminal ready output.
     /// </summary>
     public static readonly int ModemDataTerminalReady = 0x002;

@@ -142,7 +142,11 @@ internal sealed class LinuxMicroGateDevice(ILinuxNative native, int fileDescript
     public void DisableTransmitter() => native.EnableTransmitter(fileDescriptor, false);
 
     /// <inheritdoc />
-    public void Dispose() => native.Close(fileDescriptor);
+    public void Dispose()
+    {
+        native.LowerSignals(fileDescriptor);
+        native.Close(fileDescriptor);
+    }
 
     private MicroGateSignals? PollSignals(MicroGateSignals watched)
     {
